@@ -3,7 +3,7 @@ import time
 
 import pins
 import watchdog
-import oled
+import screen_ui
 import time_utils
 import config
 import cartridge_usage_time
@@ -47,7 +47,7 @@ async def start_water_production():
             log.print_log("缺水，停止制水.")
             forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
             await waiting_for_water_intake_to_recover()  # 等待进水恢复
-            await oled.display_status("空闲")
+            await screen_ui.display_status("空闲")
             log.print_log("进水压力达标，可以开始制水。")
 
         elif high_pressure == 0 and not water_running:
@@ -78,7 +78,7 @@ async def start_water_actions():
 
     timer.start()  # 开始计时
     led.set_color(199, 18, 184)  # 设置LED为紫色，表示制水中
-    await oled.display_status("制水")
+    await screen_ui.display_status("制水")
     log.print_log("开始制水.")
 
 
@@ -93,7 +93,7 @@ async def stop_water_actions():
 
     timer.stop()  # 停止计时
     led.clear()  # 熄灭LED
-    await oled.display_status("空闲")
+    await screen_ui.display_status("空闲")
 
 
 def forced_flush_ro_task_stop():
@@ -115,7 +115,7 @@ async def forced_flush_ro():
         led.set_color(255, 255, 0)  # 黄色
         pins.water_inlet_solenoid_valve_switch.value(1)  # 打开进水电磁阀
         pins.booster_pump_solenoid_valve_switch.value(1)  # 打开增压泵电磁阀
-        await oled.display_status("冲洗")
+        await screen_ui.display_status("冲洗")
         log.print_log("开始冲洗RO膜。")
 
         for _ in range(3):
@@ -128,7 +128,7 @@ async def forced_flush_ro():
             pins.water_inlet_solenoid_valve_switch.value(0)  # 关闭进水电磁阀
             timer.reset()  # 重置计时器
             led.clear()  # 灯光清除
-            await oled.display_status("空闲")
+            await screen_ui.display_status("空闲")
             log.print_log("冲洗正常结束。")
     except asyncio.CancelledError:
         pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(0)
@@ -149,7 +149,7 @@ async def after_booting_flush_ro():
             pins.water_inlet_solenoid_valve_switch.value(1)  # 打开进水电磁阀
             pins.booster_pump_solenoid_valve_switch.value(1)  # 打开增压泵电磁阀
             pins.wastewater_solenoid_valve_switch.value(1)  # 打开废水泵电磁阀
-            await oled.display_status("冲洗")
+            await screen_ui.display_status("冲洗")
             log.print_log("开机，开始冲洗RO膜。")
             for _ in range(18):  # 冲洗 18 秒
                 if pins.low_pressure_switch.value() == 1:
@@ -170,7 +170,7 @@ async def after_booting_flush_ro():
         pins.booster_pump_solenoid_valve_switch.value(0)  # 关闭增压泵电磁阀
         pins.wastewater_solenoid_valve_switch.value(0)  # 关闭废水泵电磁阀
         pins.water_inlet_solenoid_valve_switch.value(0)  # 关闭进水电磁阀
-        await oled.display_status("空闲")
+        await screen_ui.display_status("空闲")
 
 
 async def waiting_for_water_intake_to_recover():
@@ -178,7 +178,7 @@ async def waiting_for_water_intake_to_recover():
     # 读取低压开关状态 1 表示压力未达标，0 表示压力达标
     while pins.low_pressure_switch.value() == 1:
         led.set_color(255, 0, 0)  # 红色
-        await oled.display_status("缺水")
+        await screen_ui.display_status("缺水")
         await asyncio.sleep(2)  # 等待进水恢复
         watchdog.feed()  # 喂狗
     led.clear()  # 灯光清除
@@ -192,9 +192,9 @@ async def refresh_tds_value():
         try:
             purified_water_tds_value, wastewater_tds_value, temperature_vlaue = await get_tds_and_temperature()
             tds_values_ready = True  # 首批 TDS 数据已就绪
-            await oled.display_pure_water_tds_value(purified_water_tds_value)
-            await oled.display_of_wastewater_tds_value(wastewater_tds_value)
-            await oled.display_water_temperature(temperature_vlaue)
+            await screen_ui.display_pure_water_tds_value(purified_water_tds_value)
+            await screen_ui.display_of_wastewater_tds_value(wastewater_tds_value)
+            await screen_ui.display_water_temperature(temperature_vlaue)
         except Exception as e:
             # 限流：避免传感器故障时每秒刷屏日志
             now = time.ticks_ms()
@@ -209,11 +209,11 @@ async def timed_refresh_of_cartridge_usage_time():
     # 定时刷新滤芯使用时间
     while True:
         try:
-            await oled.display_cartridge_pp_usage_time(cartridge_usage_time.get_pp_cartridge_usage_time())
-            await oled.display_cartridge_udf_usage_time(cartridge_usage_time.get_udf_cartridge_usage_time())
-            await oled.display_cartridge_cto_usage_time(cartridge_usage_time.get_cto_cartridge_usage_time())
-            await oled.display_cartridge_ro_usage_time(cartridge_usage_time.get_ro_cartridge_usage_time())
-            await oled.display_cartridge_t33_usage_time(cartridge_usage_time.get_t33_cartridge_usage_time())
+            await screen_ui.display_cartridge_pp_usage_time(cartridge_usage_time.get_pp_cartridge_usage_time())
+            await screen_ui.display_cartridge_udf_usage_time(cartridge_usage_time.get_udf_cartridge_usage_time())
+            await screen_ui.display_cartridge_cto_usage_time(cartridge_usage_time.get_cto_cartridge_usage_time())
+            await screen_ui.display_cartridge_ro_usage_time(cartridge_usage_time.get_ro_cartridge_usage_time())
+            await screen_ui.display_cartridge_t33_usage_time(cartridge_usage_time.get_t33_cartridge_usage_time())
         except Exception as e:
             log.print_log(f"定时刷新滤芯使用时间发生错误: {e}")
         finally:
@@ -229,7 +229,7 @@ async def pure_water_reflow_ro():
 
     log.print_log(f"纯水洗膜程序启动，目标TDS值：{target_tds}")
     led.set_color(0, 255, 0)  # 绿色
-    await oled.display_status("洗膜")
+    await screen_ui.display_status("洗膜")
 
     last_log_time = start_time
 
@@ -259,14 +259,14 @@ async def pure_water_reflow_ro():
             if elapsed_time > timeout:
                 # 超时，停止程序
                 log.print_log("程序运行超时，程序停止。")
-                await oled.display_status("超时")
+                await screen_ui.display_status("超时")
                 led.clear()  # 灯光清除
                 break
 
             if wastewater_tds_value <= target_tds:
                 # 废水的TDS值达到设定值，停止程序
                 log.print_log("废水的TDS值达到设定值，程序停止。")
-                await oled.display_status("完成")
+                await screen_ui.display_status("完成")
                 led.clear()  # 灯光清除
                 break
 

@@ -30,12 +30,13 @@ def calculate_time_difference(timestamp):
         timestamp (float): 输入的时间戳
 
     返回:
-        int: 当前时间与输入时间戳之间的天数差
+        int: 当前时间与输入时间戳之间的天数差；结果为负数时钳制为 0
+             （全新设备且时间未同步等场景，避免显示负天数）
     """
     current_timestamp = time.time()
     difference_seconds = current_timestamp - timestamp  # 计算秒数差值
     difference_days = difference_seconds / (24 * 3600)  # 将秒数转换为天数
-    return int(difference_days)
+    return max(0, int(difference_days))
 
 
 def ms_to_timestr_with_units(milliseconds: int) -> str:

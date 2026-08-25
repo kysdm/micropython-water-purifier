@@ -4,41 +4,38 @@ import time
 import log
 import font
 import threadsafe_context
-import ssd1306
+import screen
 
-from machine import Pin
-from machine import SoftI2C
+from time_utils import TIMEZONE_OFFSET
 
 # from pins import i2c
 
 
-# 屏幕尺寸：0.96 寸 SSD1306，分辨率 128×64
+# 逻辑布局宽度：128（SSD1306 全屏；ST7735 纵向布局见 _layout()）
 width = 128
 height = 64
 
 
-# OLED 延迟初始化：模块导入时不访问 I2C，避免硬件缺失导致开机崩溃
-i2c = None
+# 屏幕延迟初始化：模块导入时不访问硬件，避免屏幕缺失导致开机崩溃
 display = None
-_oled_ready = False
-_last_oled_error_log = 0  # OLED 初始化失败日志限流时间戳
+_ui_ready = False
+_last_ui_error_log = 0  # 屏幕初始化失败日志限流时间戳
 
 
 def _ensure_display():
-    """确保 I2C 与 OLED 已初始化；硬件缺失时返回 False（不阻塞主流程）"""
-    global i2c, display, _oled_ready, _last_oled_error_log
-    if _oled_ready:
+    """确保屏幕已初始化（按 config 选择 SSD1306 或 ST7735）；硬件缺失时返回 False"""
+    global display, _ui_ready, _last_ui_error_log
+    if _ui_ready:
         return True
     try:
-        i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
-        display = ssd1306.SSD1306_I2C(width, height, i2c)
-        _oled_ready = True
+        display = screen.get_screen()
+        _ui_ready = True
         return True
-    except OSError as e:
+    except Exception as e:
         now = time.ticks_ms()
-        if time.ticks_diff(now, _last_oled_error_log) >= 60000:  # 限流：每分钟最多 1 条
-            _last_oled_error_log = now
-            log.print_log(f"OLED 初始化失败: {e}")
+        if time.ticks_diff(now, _last_ui_error_log) >= 60000:  # 限流：每分钟最多 1 条
+            _last_ui_error_log = now
+            log.print_log(f"屏幕初始化失败: {e}")
         return False
 
 
@@ -52,6 +49,17 @@ ORBIT_INTERVAL_S = 5 * 60  # 像素偏移间隔（秒）
 ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循环位置（横向 3 档 x 纵向 2 档）
 ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（自动点亮并保持）
 
+# TFT 状态文字颜色（RGB565；OLED 单色屏自动忽略，统一白色）
+STATUS_COLORS = {
+    "制水": 0x07E0,  # 绿
+    "冲洗": 0xFFE0,  # 黄
+    "缺水": 0xF800,  # 红
+    "洗膜": 0x001F,  # 蓝
+    "空闲": 0xFFFF,  # 白
+    "超时": 0xFD20,  # 橙
+    "完成": 0x07FF,  # 青
+}
+
 _shift_x = 0  # 当前像素偏移量
 _shift_y = 0
 _screen_powered = True  # 屏幕供电状态
@@ -60,56 +68,25 @@ _screen_grace_until = 0  # 空闲后允许继续点亮的截止时刻（ticks_ms
 _last_values = {}  # 最近一次各显示项的值，偏移/唤醒后用于重绘
 
 
-def reset_i2c_bus(scl_pin, sda_pin, num_clocks=9):
-    """
-    复位 SoftI2C 总线
-    参数:
-      scl_pin -- SCL 引脚号
-      sda_pin -- SDA 引脚号
-      num_clocks -- 产生时钟脉冲的数量，默认 9 个
-    """
-    # 将 SCL 和 SDA 设置为 GPIO 输出，并启用内部上拉电阻
-    scl = Pin(scl_pin, Pin.OUT, Pin.PULL_UP)
-    sda = Pin(sda_pin, Pin.OUT, Pin.PULL_UP)
-
-    # 保证总线空闲状态（两线高电平）
-    scl.value(1)
-    sda.value(1)
-    time.sleep_ms(5)
-
-    # 产生时钟脉冲，尝试释放被卡住的设备
-    for i in range(num_clocks):
-        scl.value(0)
-        time.sleep_us(5)
-        scl.value(1)
-        time.sleep_us(5)
-
-    # 生成停止条件：在 SCL 为高时，让 SDA 从低到高变化
-    scl.value(1)
-    sda.value(0)
-    time.sleep_us(5)
-    sda.value(1)
-    time.sleep_us(5)
-
-
 def display_show():
-    global i2c, display
+    global display
 
     if not _ensure_display():
         return
 
     try:
         display.show()
-        # 正常使用 oled
+        # 正常使用
     except OSError as e:
-        log.print_log(f"I2C 通信错误: {e}")
-        reset_i2c_bus(2, 1)
-        # 复位后重新初始化 SoftI2C 对象
-        i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
-        display = ssd1306.SSD1306_I2C(width, height, i2c)
+        log.print_log(f"屏幕通信错误: {e}")
+        # 复位总线并重建显示对象（OLED：复位 I2C；TFT：重新初始化 SPI）
+        try:
+            display = screen.get_screen(force_reinit=True)
+        except Exception as e2:
+            log.print_log(f"屏幕重建失败: {e2}")
 
 
-def draw_chinese(ch_str, x_axis, y_axis):
+def draw_chinese(ch_str, x_axis, y_axis, color=1):
     if not _ensure_display():
         return
     offset_ = 0
@@ -136,13 +113,13 @@ def draw_chinese(ch_str, x_axis, y_axis):
             while len(b_) < 8:
                 b_ = "0" + b_
             for x in range(0, 8):
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 文字的上半部分
-                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, int(b_[x]))  # 文字的下半部分
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 文字的上半部分
+                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, color if int(b_[x]) else 0)  # 文字的下半部分
 
         offset_ += 16
 
 
-def draw_chinese_small(ch_str, x_axis, y_axis):
+def draw_chinese_small(ch_str, x_axis, y_axis, color=1):
     if not _ensure_display():
         return
     offset_ = 0
@@ -164,18 +141,19 @@ def draw_chinese_small(ch_str, x_axis, y_axis):
                 b_ = "0" + b_
 
             for x in range(0, 8):
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 文字的左半部分
-                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, int(b_[x]))  # 文字的右半部分
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 文字的左半部分
+                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, color if int(b_[x]) else 0)  # 文字的右半部分
 
         offset_ += 12  # 调整水平偏移量为12
 
 
-def draw_english(text, x_axis, y_axis):
+def draw_english(text, x_axis, y_axis, color=1):
     """
     绘制英文字符。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
     """
     if not _ensure_display():
         return
@@ -192,24 +170,30 @@ def draw_english(text, x_axis, y_axis):
                 a_ = "0" + a_
 
             for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 绘制上半部分的像素
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 绘制上半部分的像素
 
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
-def draw_english_small(text, x_axis, y_axis):
+def draw_english_small(text, x_axis, y_axis, color=1):
     """
     绘制英文字符。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
     """
     if not _ensure_display():
         return
     offset_ = 0  # 用于字符之间的偏移量
     for char in text:
-        ascii_code = f"{ord(char)}-s"  # 获取字符的 ASCII 编码
-        byte_data = font.byte2.get(ascii_code, [0] * 12)  # 获取字符点阵数据（8x16 位图）
+        code = ord(char)
+        ascii_code = f"{code}-s"  # 小字号字库键
+        byte_data = font.byte2.get(ascii_code)
+        if byte_data is None:
+            # 小字号缺字时回退：取 16px 大字号字模的前 12 行
+            big = font.byte2.get(code)
+            byte_data = big[:12] if big else [0] * 12
 
         # 绘制每一行的像素
         for y in range(0, 12):  # 高度 12 行
@@ -218,12 +202,29 @@ def draw_english_small(text, x_axis, y_axis):
                 a_ = "0" + a_
 
             for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 绘制上半部分的像素
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 绘制上半部分的像素
 
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
-def draw_vertical_line(x, y_start, y_end):
+def draw_english_tiny(text, x_axis, y_axis, color=1):
+    """绘制 5×7 微型英文字符（用于 IP 等紧凑信息）"""
+    if not _ensure_display():
+        return
+    offset_ = 0
+    for char in text:
+        byte_data = font.tiny.get(ord(char), [0] * 7)
+        for y in range(0, 7):
+            a_ = bin(byte_data[y]).replace("0b", "")
+            while len(a_) < 8:
+                a_ = "0" + a_
+            for x in range(0, 5):
+                if int(a_[x]):
+                    display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color)
+        offset_ += 5
+
+
+def draw_vertical_line(x, y_start, y_end, color=1):
     """
     绘制一条竖线。
     :param x: 竖线的 X 坐标
@@ -233,44 +234,65 @@ def draw_vertical_line(x, y_start, y_end):
     if not _ensure_display():
         return
     for y in range(y_start, y_end):
-        display.pixel(x + _shift_x, y + _shift_y, 1)  # 设定竖线上的每个像素为亮
+        display.pixel(x + _shift_x, y + _shift_y, color)  # 设定竖线上的每个像素为亮
+
+
+def _layout():
+    """按屏幕类型返回布局坐标（y 轴）。
+
+    OLED（128×64）：紧凑布局；TFT（128×160）：纵向拉满 + 底部信息栏。
+    """
+    if screen.get_type() == "tft":
+        return {
+            "filter_y": [0, 26, 52, 78, 104],       # PP/UDF/CTO/RO/T33 标签
+            "filter_val_y": [2, 28, 54, 80, 106],   # 对应数值
+            "right_y": [2, 30, 58, 86],             # 纯水/废水/温度/状态 标签
+            "right_val_y": [4, 32, 60, 88],         # 对应数值
+            "temp_unit_y": 56,                      # °C 位置
+            "bar_y": [120, 134, 148],               # 底部信息栏三行（时间|星期 / 信号强度 / IP）
+        }
+    return {
+        "filter_y": [0, 12, 24, 36, 49],
+        "filter_val_y": [2, 14, 26, 38, 51],
+        "right_y": [2, 18, 34, 50],
+        "right_val_y": [4, 19, 35, 50],
+        "temp_unit_y": 32,
+        "bar_y": None,  # OLED 无底部信息栏
+    }
 
 
 def _draw_static_layout():
     if not _ensure_display():
         return
+    ly = _layout()
+    screen_h = display.height
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
-    draw_english("PP", 2, 0)
-    draw_english("UDF", 2, 12)
-    draw_english("CTO", 2, 24)
-    draw_english("RO", 2, 36)
-    draw_english("T", 2, 49)
-    draw_english_small("33", 9, 51)
+    draw_english("PP", 2, ly["filter_y"][0])
+    draw_english("UDF", 2, ly["filter_y"][1])
+    draw_english("CTO", 2, ly["filter_y"][2])
+    draw_english("RO", 2, ly["filter_y"][3])
+    draw_english("T", 2, ly["filter_y"][4])
+    draw_english_small("33", 9, ly["filter_y"][4] + 2)
 
-    draw_english_small(":", 25, 0)
-    draw_english_small(":", 25, 12)
-    draw_english_small(":", 25, 24)
-    draw_english_small(":", 25, 36)
-    draw_english_small(":", 25, 49)
+    for i in range(5):
+        draw_english_small(":", 25, ly["filter_y"][i])
 
-    draw_chinese_small("纯水", 67, 2)
-    draw_chinese_small("废水", 67, 18)
-    draw_chinese_small("温度", 67, 34)
-    draw_chinese_small("状态", 67, 50)
-    draw_english_small(":", 91, 2)
-    draw_english_small(":", 91, 18)
-    draw_english_small(":", 91, 34)
-    draw_english_small(":", 91, 50)
+    draw_chinese_small("纯水", 67, ly["right_y"][0])
+    draw_chinese_small("废水", 67, ly["right_y"][1])
+    draw_chinese_small("温度", 67, ly["right_y"][2])
+    draw_chinese_small("状态", 67, ly["right_y"][3])
+    for i in range(4):
+        draw_english_small(":", 91, ly["right_y"][i])
     # 温度
-    draw_chinese("°", 113, 32)
-    draw_english("C", 119, 32)
+    draw_chinese("°", 113, ly["temp_unit_y"])
+    draw_english("C", 119, ly["temp_unit_y"])
 
-    draw_vertical_line(65, 0, height)
-    # 上边框（偏移后右侧/下侧边框会被裁剪 1~2 像素，属预期）
+    draw_vertical_line(65, 0, screen_h)
+    # 边框（偏移后右侧/下侧边框会被裁剪 1~2 像素，属预期）
     display.hline(_shift_x, _shift_y, width, 1)
-    display.hline(_shift_x, _shift_y + height - 1, width, 1)
-    display.vline(_shift_x, _shift_y, height, 1)
-    display.vline(_shift_x + width - 1, _shift_y, height, 1)
+    display.hline(_shift_x, _shift_y + screen_h - 1, width, 1)
+    display.vline(_shift_x, _shift_y, screen_h, 1)
+    display.vline(_shift_x + width - 1, _shift_y, screen_h, 1)
 
 
 def init():
@@ -287,7 +309,7 @@ async def display_cartridge_pp_usage_time(var):
         """显示PP滤芯使用时间"""
         var = int(var)
         _last_values["pp"] = var
-        draw_english_small(f"{var:4}", 31, 2)
+        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][0])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_cartridge_pp_usage_time_sync, var=var)
@@ -298,7 +320,7 @@ async def display_cartridge_udf_usage_time(var):
         """显示UDF滤芯使用时间"""
         var = int(var)
         _last_values["udf"] = var
-        draw_english_small(f"{var:4}", 31, 14)
+        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][1])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_cartridge_udf_usage_time_sync, var=var)
@@ -309,7 +331,7 @@ async def display_cartridge_cto_usage_time(var):
         """显示CTO滤芯使用时间"""
         var = int(var)
         _last_values["cto"] = var
-        draw_english_small(f"{var:4}", 31, 26)
+        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][2])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_cartridge_cto_usage_time_sync, var=var)
@@ -320,7 +342,7 @@ async def display_cartridge_ro_usage_time(var):
         """显示RO滤芯使用时间"""
         var = int(var)
         _last_values["ro"] = var
-        draw_english_small(f"{var:4}", 31, 38)
+        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][3])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_cartridge_ro_usage_time_sync, var=var)
@@ -331,7 +353,7 @@ async def display_cartridge_t33_usage_time(var):
         """显示T33滤芯使用时间"""
         var = int(var)
         _last_values["t33"] = var
-        draw_english_small(f"{var:4}", 31, 51)
+        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][4])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_cartridge_t33_usage_time_sync, var=var)
@@ -343,7 +365,7 @@ async def display_pure_water_tds_value(var):
         var = int(var)
         var = min(var, 999)
         _last_values["pure_tds"] = var
-        draw_english_small(f"{var:3}", 100, 4)
+        draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][0])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_pure_water_tds_value_sync, var=var)
@@ -355,7 +377,7 @@ async def display_of_wastewater_tds_value(var):
         var = int(var)
         var = min(var, 999)
         _last_values["waste_tds"] = var
-        draw_english_small(f"{var:3}", 100, 19)
+        draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][1])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_of_wastewater_tds_value_sync, var=var)
@@ -366,7 +388,7 @@ async def display_water_temperature(var):
         """显示水温"""
         var = int(var)
         _last_values["temp"] = var
-        draw_english_small(f"{var:2}", 99, 35)
+        draw_english_small(f"{var:2}", 99, _layout()["right_val_y"][2])
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_water_temperature_sync, var=var)
@@ -384,8 +406,8 @@ async def display_countdown_time(var):
         if not _screen_powered:
             power_on()
             log.print_log("屏幕已点亮（泡膜倒计时）")
-        draw_english_small("   ", 99, 50)
-        draw_english_small(f"{var:3}", 99, 51)
+        draw_english_small("   ", 99, _layout()["right_val_y"][3])
+        draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_countdown_time_sync, var=var)
@@ -408,8 +430,8 @@ def display_countdown_time_direct(var):
     if not _screen_powered:
         power_on()
         log.print_log("屏幕已点亮（泡膜倒计时）")
-    draw_english_small("   ", 99, 50)
-    draw_english_small(f"{var:3}", 99, 51)
+    draw_english_small("   ", 99, _layout()["right_val_y"][3])
+    draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
     display_show()
 
 
@@ -430,7 +452,7 @@ async def display_status(var):
             # 结束运行：进入空闲计时，超时后自动熄屏
             _screen_wake = False
             _screen_grace_until = time.ticks_ms() + IDLE_TIMEOUT_S * 1000
-        draw_chinese_small(var, 99, 50)
+        draw_chinese_small(var, 99, _layout()["right_val_y"][3], color=STATUS_COLORS.get(var, 0xFFFF))
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_status_sync, var=var)
@@ -438,29 +460,94 @@ async def display_status(var):
 
 def _draw_value(key, var):
     """按 key 重绘某一个显示项（供像素偏移/唤醒后恢复画面）"""
+    ly = _layout()
     if key == "status":
-        draw_chinese_small(str(var), 99, 50)
+        draw_chinese_small(str(var), 99, ly["right_val_y"][3], color=STATUS_COLORS.get(str(var), 0xFFFF))
         return
     var = int(var)
     if key == "pp":
-        draw_english_small(f"{var:4}", 31, 2)
+        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][0])
     elif key == "udf":
-        draw_english_small(f"{var:4}", 31, 14)
+        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][1])
     elif key == "cto":
-        draw_english_small(f"{var:4}", 31, 26)
+        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][2])
     elif key == "ro":
-        draw_english_small(f"{var:4}", 31, 38)
+        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][3])
     elif key == "t33":
-        draw_english_small(f"{var:4}", 31, 51)
+        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][4])
     elif key == "pure_tds":
-        draw_english_small(f"{min(var, 999):3}", 100, 4)
+        draw_english_small(f"{min(var, 999):3}", 100, ly["right_val_y"][0])
     elif key == "waste_tds":
-        draw_english_small(f"{min(var, 999):3}", 100, 19)
+        draw_english_small(f"{min(var, 999):3}", 100, ly["right_val_y"][1])
     elif key == "temp":
-        draw_english_small(f"{var:2}", 99, 35)
+        draw_english_small(f"{var:2}", 99, ly["right_val_y"][2])
     elif key == "countdown":
-        draw_english_small("   ", 99, 50)
-        draw_english_small(f"{var:3}", 99, 51)
+        draw_english_small("   ", 99, ly["right_val_y"][3])
+        draw_english_small(f"{var:3}", 99, ly["right_val_y"][3] + 1)
+
+
+_SIGNAL_ICON_W = 4 * 3 + 3 * 2  # 4 格信号图标总宽度（每格 3px + 2px 间隙）
+
+
+def _draw_signal_icon(x, y, color):
+    """绘制 4 格信号强度图标（左低右高，梯形），返回图标占用宽度"""
+    bar_w = 3
+    gap = 2
+    heights = [4, 7, 10, 12]
+    for i, h in enumerate(heights):
+        display.fill_rect(x + i * (bar_w + gap), y + 12 - h, bar_w, h, color)
+    return _SIGNAL_ICON_W
+
+
+def _draw_bottom_bar_sync():
+    """TFT 底部信息栏：时间|星期 / 信号强度 / IP（OLED 无此栏）"""
+    if not _ensure_display():
+        return
+    ly = _layout()
+    bar = ly["bar_y"]
+    if not bar:
+        return
+    import wifi
+
+    if wifi.sta_if.isconnected():
+        try:
+            rssi = wifi.sta_if.status("rssi")  # 信号强度（dBm，负值）
+            status = f"WIFI {rssi}dBm"
+            if rssi >= -60:
+                bar_color = 0x07E0  # 绿：信号好
+            elif rssi >= -80:
+                bar_color = 0xFFE0  # 黄：信号一般
+            else:
+                bar_color = 0xF800  # 红：信号差
+        except Exception:
+            status = "WIFI ON"
+            bar_color = 1
+        ip = wifi.sta_if.ifconfig()[0]
+    else:
+        status = "WIFI OFF"
+        ip = "--"
+        bar_color = 1
+
+    # 日期+时间：异常时也照常显示（如时间未同步会显示 00-01-01 00:00 的真实值）
+    try:
+        now = time.localtime(time.time() + TIMEZONE_OFFSET)
+        # 两位年份格式（完整年份会超出 128px 宽度）
+        date_time_str = "{:02d}-{:02d}-{:02d} {:02d}:{:02d}".format(
+            now[0] % 100, now[1], now[2], now[3], now[4]
+        )
+    except Exception:
+        date_time_str = "--/--/-- --:--"
+
+    # 清空三行区域并重绘
+    display.fill_rect(0, bar[0], width, 36, 0)
+    # 第一行：日期 + 时间（8px）
+    draw_english_small(date_time_str, 2, bar[0])
+    # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
+    draw_english_small(status, 2, bar[1], color=bar_color)
+    _draw_signal_icon(width - 2 - _SIGNAL_ICON_W, bar[1], bar_color)
+    # 第三行：IP 地址（微型字体，"IP: " 前缀）
+    draw_english_tiny("IP: " + ip, 2, bar[2])
+    display_show()
 
 
 def redraw_all():
@@ -472,6 +559,8 @@ def redraw_all():
     for key in ("pp", "udf", "cto", "ro", "t33", "pure_tds", "waste_tds", "temp", "countdown", "status"):
         if key in _last_values:
             _draw_value(key, _last_values[key])
+    if _layout()["bar_y"]:
+        _draw_bottom_bar_sync()  # TFT 底部信息栏（自带 display_show）
     display.contrast(SCREEN_BRIGHTNESS)
     display_show()
 
@@ -496,12 +585,14 @@ def power_on():
 
 
 async def orbit_task():
-    """像素偏移任务（防烧屏）：周期切换偏移位置并重绘，均摊固定元素的像素负载"""
+    """像素偏移任务（防烧屏，仅 OLED 需要）：周期切换偏移位置并重绘，均摊固定元素的像素负载"""
     global _shift_x, _shift_y
     idx = 0
     while True:
         try:
             await asyncio.sleep(ORBIT_INTERVAL_S)
+            if screen.get_type() != "oled":
+                continue  # TFT 为 LCD，无烧屏问题，不需要像素偏移
             idx = (idx + 1) % len(ORBIT_POSITIONS)
             _shift_x, _shift_y = ORBIT_POSITIONS[idx]
             if _screen_powered:
@@ -524,6 +615,17 @@ async def auto_off_task():
                 log.print_log("空闲超时，自动熄屏（防烧屏）")
         except Exception as e:
             log.print_log(f"自动熄屏任务错误: {e}")
+        await asyncio.sleep(30)
+
+
+async def refresh_bottom_bar():
+    """刷新 TFT 底部 WiFi 状态/IP 信息栏（OLED 无此栏，直接跳过）"""
+    while True:
+        try:
+            if screen.get_type() == "tft" and _screen_powered:
+                await threadsafe_context.external_hardware.assign(_draw_bottom_bar_sync)
+        except Exception as e:
+            log.print_log(f"底部信息栏刷新失败: {e}")
         await asyncio.sleep(30)
 
 

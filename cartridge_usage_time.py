@@ -1,5 +1,4 @@
 import config
-import oled
 
 from time_utils import calculate_time_difference
 

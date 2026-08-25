@@ -1,6 +1,6 @@
 import asyncio
 
-import oled
+import screen_ui
 import log
 import wifi
 import ntp
@@ -31,15 +31,15 @@ async def main():
         asyncio.create_task(time_utils.periodic_time_backup())  # 每小时备份时间到 flash，供断电恢复
 
         # 连接WiFi
-        oled.display_fill()  # 清空屏幕
-        oled.display_text("wifi connection", 3, 0)
-        oled.display_text(config.get_config_value("wifi_ssid"), 3, 10)
-        oled.display_text(config.get_config_value("wifi_password"), 3, 20)
+        screen_ui.display_fill()  # 清空屏幕
+        screen_ui.display_text("wifi connection", 3, 0)
+        screen_ui.display_text(config.get_config_value("wifi_ssid"), 3, 10)
+        screen_ui.display_text(config.get_config_value("wifi_password"), 3, 20)
 
         wifi.connect_wifi_sync()
         # 同步NTP时间（有限次数尝试；失败则用本地近似时间继续启动，不再阻塞）
-        oled.display_fill()  # 清空屏幕
-        oled.display_text("ntp time sync", 3, 30)
+        screen_ui.display_fill()  # 清空屏幕
+        screen_ui.display_text("ntp time sync", 3, 30)
         time_synced = False
         for _ in range(NTP_SYNC_ATTEMPTS):
             if ntp.sync_time_sync() == "ok":
@@ -49,8 +49,8 @@ async def main():
         if not time_synced:
             print_log("NTP 同步失败，以本地近似时间继续启动（将每 10 分钟重试同步）")
 
-        oled.display_fill()  # 清空屏幕
-        oled.init()
+        screen_ui.display_fill()  # 清空屏幕
+        screen_ui.init()
         asyncio.create_task(water.timed_refresh_of_cartridge_usage_time())  # 启动定时刷新滤芯使用时间
         asyncio.create_task(water.refresh_tds_value())  # 启动刷新TDS值任务
         asyncio.create_task(wifi.monitor_wifi())  # 监控WiFi连接状态，自动重连

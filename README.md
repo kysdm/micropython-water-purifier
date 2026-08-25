@@ -8,8 +8,8 @@
 - RO 膜强制冲洗、开机冲洗
 - 纯水泡膜（洗膜）自动流程（TDS 达标/超时退出）
 - 双通道 TDS / 水温监测（UART 传感器）
-- 0.96 寸 SSD1306 OLED 中文界面（128×64，I2C）
-- OLED 防烧屏：像素偏移 + 空闲自动熄屏 + 亮度控制
+- 屏幕双选（烧录前决定）：0.96 寸 SSD1306 OLED（I2C）或 1.8 寸 ST7735 TFT（SPI，128×160）
+- 防烧屏：像素偏移（仅 OLED）+ 空闲自动熄屏 + 亮度控制
 - 内置 Web 管理服务器（端口 80）：滤芯状态、参数设置、WiFi 配置、日志下载
 - WiFi 自动连接/断线重连，NTP 自动校时
 - 断电时间备份（软件近似时钟），离线也能启动
@@ -48,7 +48,8 @@
 | 废水阀 | GPIO10（输出） | |
 | 进水电磁阀 | GPIO13（输出） | |
 | TDS 传感器 | UART1：TX=GPIO17，RX=GPIO18，9600bps | 双通道协议 |
-| OLED（0.96 寸） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64 |
+| OLED（0.96 寸，默认） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [screen.py](screen.py) 顶部 `OLED_PINS` 配置（默认 SDA=1/SCL=2） |
+| TFT（可选，1.8 寸） | SPI：SCLK/MOSI/CS/DC/RST/BL | ST7735 128×160 全彩；引脚在 [screen.py](screen.py) 顶部 `TFT_PINS` 配置（默认 7/8/14/15/16/21），坐标偏移 `TFT_X_OFFSET`/`TFT_Y_OFFSET`、颜色顺序 `TFT_BGR` 同处配置，两块屏硬件只接一块 |
 | RGB LED | GPIO48 | WS2812B 单灯 |
 
 RGB LED 颜色含义：
@@ -77,7 +78,7 @@ RGB LED 颜色含义：
    - 命令行推荐 `mpremote`（支持递归目录）：
      ```bash
      mpremote cp -r lib :/lib
-     mpremote cp boot.py main.py config.py pins.py water.py oled.py web.py wifi.py ntp.py log.py time_utils.py tds.py countdown.py timer.py watchdog.py cartridge_usage_time.py threadsafe_context.py font.py ssd1306.py ws2812b.py :/
+     mpremote cp boot.py main.py config.py pins.py water.py screen_ui.py web.py wifi.py ntp.py log.py time_utils.py tds.py countdown.py timer.py watchdog.py cartridge_usage_time.py threadsafe_context.py font.py ssd1306.py screen.py st7735.py ws2812b.py :/
      ```
    - ⚠️ 不要直接 `mpremote cp -r . :`：会把本地 `config.json`（含 WiFi 密码）、`logs/`、`.history/` 一并上传覆盖设备；`ampy` 不支持目录递归，无法同步 `lib/`。
 3. **首次配置 WiFi**（设备没有 AP 模式，默认 WiFi 连不上时将无法通过 Web 配置，二选一）：
@@ -103,7 +104,7 @@ RGB LED 颜色含义：
    - WiFi 状态监控（每 30 秒，断线自动重连）
    - NTP 定时同步（每天 4 点校准；失败则 10 分钟重试）
    - Web 服务器
-   - OLED 像素偏移 / 空闲自动熄屏（防烧屏）
+   - 屏幕防烧屏：像素偏移（仅 OLED）/ 空闲自动熄屏
 7. 开机冲洗 RO 膜（18 秒）；
 8. 进入制水主循环（0.5 秒轮询压力开关）。
 
@@ -166,7 +167,9 @@ stateDiagram-v2
 
 ---
 
-## OLED 界面与防烧屏
+## 屏幕界面与防烧屏
+
+> 界面布局同时适用于 OLED 与 TFT（[screen.py](screen.py) 抽象层）：屏幕类型在 `screen.py` 顶部的 `DISPLAY_TYPE` 常量决定（烧录前配置）；TFT（128×160）布局纵向铺满，**底部三行：`日期+时间`（8px，`26-08-23 14:35` 两位年份）、`信号强度（dBm，绿/黄/红着色）+ 右侧信号图标`、`IP: xxx.xxx.xxx.xxx`（5×7 微型字体，完整显示）**（OLED 无底部栏；时间未同步时照常显示设备时间）；**TFT 状态文字按状态着色**（制水绿/冲洗黄/缺水红/洗膜蓝/超时橙/完成青/空闲白），OLED 单色屏忽略颜色统一白色。
 
 **常显布局**：
 
@@ -175,10 +178,12 @@ stateDiagram-v2
 
 **防烧屏机制**（OLED 有机发光像素会因长期固定显示而老化，不可逆）：
 
-- **像素偏移**：画面每 5 分钟在 2px 范围内循环平移，均摊固定元素的像素负载；
+- **像素偏移（仅 OLED）**：画面每 5 分钟在 2px 范围内循环平移，均摊固定元素的像素负载；TFT 为 LCD 无烧屏问题，自动跳过；
 - **空闲自动熄屏**：无制水等运行状态且空闲超过 5 分钟后，屏幕自动关闭（像素完全不发光）；
 - **运行状态点亮**：制水/冲洗/洗膜/缺水时自动点亮屏幕并保持，倒计时期间也保持点亮；
 - **亮度控制**：默认亮度约 30%，降低老化速度。
+
+> TFT 为 LCD 液晶屏，无 OLED 烧屏问题；像素偏移仅对 OLED 生效，空闲熄屏对 TFT 主要作用是省电与延长背光寿命。
 
 **注意**：画面偏移 1~2px 时右侧/下侧边框会被裁剪，属正常现象。
 
@@ -275,4 +280,5 @@ stateDiagram-v2
 |---|---|---|---|
 | [lib/threadsafe](lib/threadsafe/) | [peterhinch/micropython-async](https://github.com/peterhinch/micropython-async)（`v3/threadsafe/`） | MIT | Peter Hinch 的线程安全原语（队列/事件/消息/Context），用于双核并行调度；`context.py` 有本地小改动（异常捕获与重抛），详见 [lib/threadsafe/README.md](lib/threadsafe/README.md) |
 | [ssd1306.py](ssd1306.py) | MicroPython 官方驱动 | MIT | SSD1306 OLED 标准驱动 |
+| [st7735.py](st7735.py) | 开源 MIT 驱动整理 | MIT | ST7735S TFT 驱动（1.8 寸 128×160，RGB565，SPI） |
 | [font.py](font.py) | 项目自有点阵字库 | 本项目 | 中文/ASCII 点阵数据，随固件分发 |
