@@ -10,14 +10,6 @@ import log
 stop_event = asyncio.Event()
 
 
-# 格式化倒计时输出
-def format_time(seconds):
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds = seconds % 60
-    return f"{hours:02}:{minutes:02}:{seconds:02}"
-
-
 async def countdown(seconds: int, stop_event: asyncio.Event, after_func) -> None:
     """
     倒计时任务：以秒为单位倒计时，将剩余时间显示到 OLED 上（纯数字，不带单位）：

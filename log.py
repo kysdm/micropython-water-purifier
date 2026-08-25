@@ -11,8 +11,15 @@ LOG_SAVE_PATH = "/logs"
 LOG_FILE_PATH = "/logs/log.txt"
 MAX_LOG_SIZE = 1024 * 200  # 设置最大日志文件大小为200KB
 MAX_LOG_HISTORY = 5  # 保留最近5个日志文件
-# 设置时区偏移（单位：秒）
-TIMEZONE_OFFSET = 8 * 3600  # 例如，UTC+8
+
+
+# 确保日志目录存在（新烧录的设备没有 /logs，否则日志会静默丢失）
+try:
+    os.mkdir(LOG_SAVE_PATH)
+except OSError:
+    pass
+
+from time_utils import TIMEZONE_OFFSET  # 统一时区偏移定义
 
 current_log_buffer = StringIO()
 

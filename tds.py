@@ -5,6 +5,20 @@ import log
 
 from pins import uart
 
+# TDS 错误日志限流（避免传感器故障时每秒刷屏）
+ERROR_LOG_INTERVAL_MS = 60000
+_last_error_log_time = 0
+
+
+def _should_log_error():
+    """错误日志限流：两次记录至少间隔 ERROR_LOG_INTERVAL_MS"""
+    global _last_error_log_time
+    now = time.ticks_ms()
+    if time.ticks_diff(now, _last_error_log_time) >= ERROR_LOG_INTERVAL_MS:
+        _last_error_log_time = now
+        return True
+    return False
+
 
 # 计算校验和函数
 def calculate_checksum(data):
@@ -59,7 +73,8 @@ def send_command(command, channel=0x01, data=None):
         #     log.print_log_sync(f"解析结果:, {parsed}")
         return parsed
     else:
-        log.print_log("未收到TDS传感器响应")
+        if _should_log_error():
+            log.print_log("未收到TDS传感器响应")
         return None
 
 

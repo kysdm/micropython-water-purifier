@@ -97,29 +97,6 @@ def seconds_until_next_hour():
     return seconds_until_next_hour
 
 
-def seconds_until_5_am():
-    """获取距离明天凌晨5点还有多少秒"""
-    # 当前时间（加上时区偏移）
-    now = time.time() + TIMEZONE_OFFSET
-    lt = time.localtime(now)
-
-    # 构造今天凌晨5点的时间元组，只取8个元素：(year, month, mday, hour, minute, second, weekday, yearday)
-    target_today = (lt[0], lt[1], lt[2], 5, 0, 0, lt[6], lt[7])
-    target_today_ts = time.mktime(target_today)
-
-    if now < target_today_ts:
-        # 当前时间还没到今天凌晨5点
-        target_ts = target_today_ts
-    else:
-        # 当前时间已经过了今天凌晨5点，则目标为明天凌晨5点
-        # 先构造明天的日期：给今天凌晨5点的时间戳加一天
-        tomorrow = time.localtime(target_today_ts + 86400)
-        target_tomorrow = (tomorrow[0], tomorrow[1], tomorrow[2], 5, 0, 0, tomorrow[6], tomorrow[7])
-        target_ts = time.mktime(target_tomorrow)
-
-    return int(target_ts - now)
-
-
 def seconds_until_4_am():
     """获取距离明天凌晨4点还有多少秒"""
     # 当前时间（加上时区偏移）

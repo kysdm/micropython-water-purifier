@@ -1,3 +1,6 @@
+# VS Code 本地配置（MicroPico 插件设置等，无需入库）
+.vscode/
+
 # VS Code MicroPython 插件自动生成的历史备份
 .history/
 

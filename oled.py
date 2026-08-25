@@ -18,9 +18,30 @@ width = 128
 height = 64
 
 
-# 初始化 I2C 和 OLED 屏幕
-i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
-display = ssd1306.SSD1306_I2C(width, height, i2c)
+# OLED 延迟初始化：模块导入时不访问 I2C，避免硬件缺失导致开机崩溃
+i2c = None
+display = None
+_oled_ready = False
+_last_oled_error_log = 0  # OLED 初始化失败日志限流时间戳
+
+
+def _ensure_display():
+    """确保 I2C 与 OLED 已初始化；硬件缺失时返回 False（不阻塞主流程）"""
+    global i2c, display, _oled_ready, _last_oled_error_log
+    if _oled_ready:
+        return True
+    try:
+        i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
+        display = ssd1306.SSD1306_I2C(width, height, i2c)
+        _oled_ready = True
+        return True
+    except OSError as e:
+        now = time.ticks_ms()
+        if time.ticks_diff(now, _last_oled_error_log) >= 60000:  # 限流：每分钟最多 1 条
+            _last_oled_error_log = now
+            log.print_log(f"OLED 初始化失败: {e}")
+        return False
+
 
 # 屏幕亮度降级标志（供 lower_screen_brightness 使用）
 lower_screen_brightness_tag = False
@@ -77,6 +98,9 @@ def reset_i2c_bus(scl_pin, sda_pin, num_clocks=9):
 def display_show():
     global i2c, display
 
+    if not _ensure_display():
+        return
+
     try:
         display.show()
         # 正常使用 oled
@@ -89,6 +113,8 @@ def display_show():
 
 
 def draw_chinese(ch_str, x_axis, y_axis):
+    if not _ensure_display():
+        return
     offset_ = 0
     for k in ch_str:
         code = 0x00  # 将中文转成16进制编码
@@ -120,6 +146,8 @@ def draw_chinese(ch_str, x_axis, y_axis):
 
 
 def draw_chinese_small(ch_str, x_axis, y_axis):
+    if not _ensure_display():
+        return
     offset_ = 0
     for k in ch_str:
         code = 0x00  # 将中文转成16进制编码
@@ -152,6 +180,8 @@ def draw_english(text, x_axis, y_axis):
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
     """
+    if not _ensure_display():
+        return
     offset_ = 0  # 用于字符之间的偏移量
     for char in text:
         ascii_code = ord(char)  # 获取字符的 ASCII 编码
@@ -177,6 +207,8 @@ def draw_english_small(text, x_axis, y_axis):
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
     """
+    if not _ensure_display():
+        return
     offset_ = 0  # 用于字符之间的偏移量
     for char in text:
         ascii_code = f"{ord(char)}-s"  # 获取字符的 ASCII 编码
@@ -201,11 +233,15 @@ def draw_vertical_line(x, y_start, y_end):
     :param y_start: 竖线的起始 Y 坐标
     :param y_end: 竖线的结束 Y 坐标
     """
+    if not _ensure_display():
+        return
     for y in range(y_start, y_end):
         display.pixel(x + _shift_x, y + _shift_y, 1)  # 设定竖线上的每个像素为亮
 
 
 def _draw_static_layout():
+    if not _ensure_display():
+        return
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
     draw_english("PP", 2, 0)
     draw_english("UDF", 2, 12)
@@ -241,6 +277,8 @@ def _draw_static_layout():
 
 
 def init():
+    if not _ensure_display():
+        return
     _draw_static_layout()
     display.contrast(SCREEN_BRIGHTNESS)  # 降低默认亮度，减缓像素老化
 
@@ -408,6 +446,8 @@ def _draw_value(key, var):
 
 def redraw_all():
     """清屏并重绘静态布局与最近一次的全部动态值（像素偏移或唤醒时调用）"""
+    if not _ensure_display():
+        return
     display.fill(0)
     _draw_static_layout()
     for key in ("pp", "udf", "cto", "ro", "t33", "pure_tds", "waste_tds", "temp", "countdown", "status"):
@@ -420,6 +460,8 @@ def redraw_all():
 def power_off():
     # 关闭屏幕（像素停止发光，防止烧屏；显存内容保留）
     global _screen_powered
+    if not _ensure_display():
+        return
     display.poweroff()
     _screen_powered = False
 
@@ -427,6 +469,8 @@ def power_off():
 def power_on():
     # 打开屏幕并重绘当前画面
     global _screen_powered
+    if not _ensure_display():
+        return
     display.poweron()
     redraw_all()
     _screen_powered = True
@@ -437,11 +481,14 @@ async def orbit_task():
     global _shift_x, _shift_y
     idx = 0
     while True:
-        await asyncio.sleep(ORBIT_INTERVAL_S)
-        idx = (idx + 1) % len(ORBIT_POSITIONS)
-        _shift_x, _shift_y = ORBIT_POSITIONS[idx]
-        if _screen_powered:
-            redraw_all()
+        try:
+            await asyncio.sleep(ORBIT_INTERVAL_S)
+            idx = (idx + 1) % len(ORBIT_POSITIONS)
+            _shift_x, _shift_y = ORBIT_POSITIONS[idx]
+            if _screen_powered:
+                redraw_all()
+        except Exception as e:
+            log.print_log(f"像素偏移任务错误: {e}")
 
 
 async def auto_off_task():
@@ -478,11 +525,15 @@ def lower_screen_brightness():
 
 
 def display_text(text, x, y):
+    if not _ensure_display():
+        return
     display.text(text, x, y, 1)
     display_show()
 
 
 def display_fill():
+    if not _ensure_display():
+        return
     display.fill(0)
 
 

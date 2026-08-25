@@ -13,9 +13,6 @@ from time_utils import save_time_to_flash
 ntptime.host = "ntp.aliyun.com"  # 使用阿里云的 NTP 服务器
 
 
-# 设置时区偏移（单位：秒）
-TIMEZONE_OFFSET = 8 * 3600  # 例如，UTC+8
-
 MAX_RETRIES = 5  # 最大重试次数
 INITIAL_DELAY = 5  # 初始重试间隔时间（秒）
 BACKOFF_FACTOR = 2  # 指数退避倍数，每次失败后间隔时间翻倍

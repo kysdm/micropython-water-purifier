@@ -23,6 +23,7 @@ led = WS2812B(1, rgb_led)  # 灯带对象
 purified_water_tds_value = 0  # 纯水TDS值
 wastewater_tds_value = 0  # 废水TDS值
 tds_values_ready = False  # 是否已成功读取到首批TDS数据
+_last_tds_error_log = 0  # TDS 错误日志限流时间戳（ticks_ms）
 
 
 water_running = False  # False 表示停止，True 表示正在制水
@@ -185,7 +186,7 @@ async def waiting_for_water_intake_to_recover():
 
 async def refresh_tds_value():
     # 刷新TDS值
-    global purified_water_tds_value, wastewater_tds_value, tds_values_ready
+    global purified_water_tds_value, wastewater_tds_value, tds_values_ready, _last_tds_error_log
 
     while True:
         try:
@@ -195,7 +196,11 @@ async def refresh_tds_value():
             await oled.display_of_wastewater_tds_value(wastewater_tds_value)
             await oled.display_water_temperature(temperature_vlaue)
         except Exception as e:
-            log.print_log(f"读取TDS传感器数据发生错误: {e}")
+            # 限流：避免传感器故障时每秒刷屏日志
+            now = time.ticks_ms()
+            if time.ticks_diff(now, _last_tds_error_log) >= 60000:
+                _last_tds_error_log = now
+                log.print_log(f"读取TDS传感器数据发生错误: {e}")
         finally:
             await asyncio.sleep(1)
 
