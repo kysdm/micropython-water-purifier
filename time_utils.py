@@ -1,6 +1,12 @@
+import asyncio
 import time
 
 TIMEZONE_OFFSET = 8 * 3600  # 例如，UTC+8
+
+# ---- 断电时钟备份（软件近似时钟） ----
+TIME_STATE_FILE = "/time_state.txt"  # 上次已知的 UTC 时间戳（秒，自 2000-01-01 起）
+MIN_VALID_TIMESTAMP = 365 * 24 * 3600  # 小于 1 年的时间戳视为未同步，不保存/不恢复
+TIME_BACKUP_INTERVAL_S = 3600  # 时间备份周期（秒）
 
 
 def current_time_ms():
@@ -135,3 +141,64 @@ def seconds_until_4_am():
         target_ts = time.mktime(target_tomorrow)
 
     return int(target_ts - now)
+
+
+# ---- 断电时钟备份（软件近似时钟） ----
+def save_time_to_flash():
+    """
+    将当前 UTC 时间戳写入 flash，供断电后恢复近似时钟。
+    未同步（时间异常小）时不保存，避免用垃圾值覆盖有效备份。
+    """
+    now = int(time.time())
+    if now < MIN_VALID_TIMESTAMP:
+        return
+    try:
+        with open(TIME_STATE_FILE, "w") as file:
+            file.write(str(now))
+    except OSError:
+        pass  # flash 写入失败不影响主流程
+
+
+def load_saved_time():
+    """读取上次保存的 UTC 时间戳；文件缺失或值无效时返回 None"""
+    try:
+        with open(TIME_STATE_FILE, "r") as file:
+            value = int(file.read().strip())
+        return value if value >= MIN_VALID_TIMESTAMP else None
+    except (OSError, ValueError):
+        return None
+
+
+def apply_saved_time():
+    """
+    断电后 RTC 丢失时，用上次保存的时间恢复近似时钟。
+    仅在上电复位（PWRON_RESET）且 RTC 尚未同步时生效；
+    近似误差 = 断电时长，NTP 同步成功后自动校准。
+    返回是否已应用。
+    """
+    import machine
+    try:
+        if machine.reset_cause() != machine.PWRON_RESET:
+            return False  # 软复位/看门狗复位等场景 RTC 仍有效，无需恢复
+        if time.time() >= MIN_VALID_TIMESTAMP:
+            return False  # RTC 已有有效时间
+        saved = load_saved_time()
+        if saved is None:
+            return False
+        approx = saved + int(time.time())  # 上次保存值 + 本次开机以来的运行秒数
+        t = time.localtime(approx)
+        # 星期字段与 ntptime.settime() 保持一致
+        machine.RTC().datetime((t[0], t[1], t[2], t[6] + 1, t[3], t[4], t[5], 0))
+        return True
+    except Exception:
+        return False
+
+
+async def periodic_time_backup():
+    """
+    周期备份当前时间到 flash（默认每小时一次），
+    断电后时间误差 = 断电时长 + 最多一个备份周期。
+    """
+    while True:
+        await asyncio.sleep(TIME_BACKUP_INTERVAL_S)
+        save_time_to_flash()

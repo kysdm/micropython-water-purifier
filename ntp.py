@@ -7,6 +7,7 @@ import threadsafe_context
 from log import print_log
 from time_utils import get_local_time
 from time_utils import seconds_until_4_am
+from time_utils import save_time_to_flash
 
 # 设置自定义 NTP 服务器
 ntptime.host = "ntp.aliyun.com"  # 使用阿里云的 NTP 服务器
@@ -38,6 +39,7 @@ def sync_time_sync():
             print_log(f"开始第 {attempt + 1} 次时间同步")
             ntptime.settime()  # 从 NTP 服务器获取时间
             last_sync_success = True
+            save_time_to_flash()  # 备份当前时间，供断电后恢复近似时钟
             print_log("同步时间成功")
             print_log(f"本地时间: {get_local_time()}")
             return "ok"  # 成功后直接返回
@@ -63,7 +65,12 @@ async def sync_time():
 async def schedule_sync_time():
     while True:
         try:
-            await asyncio.sleep(seconds_until_4_am())  # 定时同步时间，每天 4 点同步一次
+            if last_sync_success:
+                # 时间已同步：每天 4 点定时校准一次
+                await asyncio.sleep(seconds_until_4_am())
+            else:
+                # 上次同步失败（如断电后离线启动）：每 10 分钟重试，尽快校准时间
+                await asyncio.sleep(600)
             await sync_time()
         except Exception as e:
             print_log(f"定时同步时间失败: {e}")

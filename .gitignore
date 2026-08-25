@@ -10,3 +10,6 @@ __pycache__/
 
 # 运行时配置：包含 WiFi 密码等敏感信息，由 config.py 在设备上自动生成
 config.json
+
+# 断电时钟备份文件（软件近似时钟）
+time_state.txt
