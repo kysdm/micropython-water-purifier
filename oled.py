@@ -5,7 +5,6 @@ import log
 import font
 import threadsafe_context
 import ssd1306
-import time_utils
 
 from machine import Pin
 from machine import SoftI2C
@@ -48,12 +47,10 @@ lower_screen_brightness_tag = False
 
 # ---- OLED 防烧屏配置 ----
 SCREEN_BRIGHTNESS = 0x4D  # 正常显示亮度（原 0x7F，降至约 30%，减缓像素老化）
-NIGHT_START_HOUR = 22  # 夜间自动熄屏开始时间（24 小时制）
-NIGHT_END_HOUR = 6  # 夜间自动熄屏结束时间
+IDLE_TIMEOUT_S = 5 * 60  # 纯空闲模式：无运行状态且空闲超过该时长（秒）后自动熄屏
 ORBIT_INTERVAL_S = 5 * 60  # 像素偏移间隔（秒）
 ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循环位置（横向 3 档 x 纵向 2 档）
-ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（夜间也会点亮）
-WAKE_GRACE_S = 60  # 状态回到空闲后，屏幕继续点亮的时间（秒），方便查看最终数值
+ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（自动点亮并保持）
 
 _shift_x = 0  # 当前像素偏移量
 _shift_y = 0
@@ -408,9 +405,9 @@ async def display_status(var):
                 log.print_log(f"屏幕已点亮（{var}）")
                 return
         elif _screen_wake:
-            # 结束运行：进入空闲宽限期，期间保持点亮
+            # 结束运行：进入空闲计时，超时后自动熄屏
             _screen_wake = False
-            _screen_grace_until = time.ticks_ms() + WAKE_GRACE_S * 1000
+            _screen_grace_until = time.ticks_ms() + IDLE_TIMEOUT_S * 1000
         draw_chinese_small(var, 99, 50)
         display_show()
 
@@ -492,23 +489,17 @@ async def orbit_task():
 
 
 async def auto_off_task():
-    """自动熄屏任务（防烧屏）：夜间关闭屏幕；制水等运行状态或宽限期内保持点亮"""
+    """纯空闲自动熄屏任务（防烧屏）：无运行状态且空闲超过 IDLE_TIMEOUT_S 后熄屏；运行状态/倒计时自动点亮"""
     while True:
         try:
-            hour = time.localtime(time.time() + time_utils.TIMEZONE_OFFSET)[3]
-            is_night = hour >= NIGHT_START_HOUR or hour < NIGHT_END_HOUR
-            if is_night:
-                now = time.ticks_ms()
-                keep_on = _screen_wake or time.ticks_diff(now, _screen_grace_until) < 0
-                if keep_on and not _screen_powered:
-                    power_on()
-                    log.print_log("屏幕已点亮（运行状态）")
-                elif not keep_on and _screen_powered:
-                    power_off()
-                    log.print_log("夜间自动熄屏（防烧屏）")
-            elif not _screen_powered:
+            now = time.ticks_ms()
+            keep_on = _screen_wake or time.ticks_diff(now, _screen_grace_until) < 0
+            if keep_on and not _screen_powered:
                 power_on()
-                log.print_log("屏幕已唤醒")
+                log.print_log("屏幕已点亮（运行状态）")
+            elif not keep_on and _screen_powered:
+                power_off()
+                log.print_log("空闲超时，自动熄屏（防烧屏）")
         except Exception as e:
             log.print_log(f"自动熄屏任务错误: {e}")
         await asyncio.sleep(30)

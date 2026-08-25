@@ -6,7 +6,7 @@ from time_utils import get_current_timestamp
 
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
-DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678"}
+DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin"}
 REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
 
 # 缓存配置数据
@@ -156,6 +156,16 @@ def reset_t33_usage():
 def set_wifi(wifi_ssid, wifi_password):
     update_config("wifi_ssid", wifi_ssid)
     update_config("wifi_password", wifi_password)
+
+
+def get_web_password():
+    # Web 访问密码；未配置时使用默认值
+    value = get_config_value("web_password")
+    return value if isinstance(value, str) and value else "admin"
+
+
+def set_web_password(new_password):
+    update_config("web_password", new_password)
 
 
 def set_pure_water_ro_clean_timeout(new_time):

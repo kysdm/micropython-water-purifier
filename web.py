@@ -1,6 +1,7 @@
 import asyncio
 import os
 import re
+import ubinascii
 
 import log
 import config
@@ -9,6 +10,7 @@ import cartridge_usage_time
 
 ADDRESS = "0.0.0.0"
 PORT = 80
+AUTH_USER = "admin"  # Web 管理用户名（Basic Auth）
 
 
 def file_exists(file_path):
@@ -43,6 +45,33 @@ def validate_wifi(ssid: str, password: str) -> bool:
         return False
 
     return True
+
+
+def get_web_password():
+    """获取 Web 访问密码（config.json 的 web_password，缺省 admin）"""
+    return config.get_web_password()
+
+
+def is_authorized(request):
+    """
+    校验 HTTP Basic Auth 请求头（Authorization: Basic base64(用户名:密码)）。
+    密码错误或缺失返回 False。
+    """
+    try:
+        header_part = request.split("\r\n\r\n", 1)[0]
+        for line in header_part.split("\r\n"):
+            if line.lower().startswith("authorization:"):
+                # 先去掉 "Authorization:" 前缀，再拆 scheme 与 token
+                auth = line.partition(":")[2].strip()
+                scheme, _, token = auth.partition(" ")
+                if scheme.lower() != "basic" or not token:
+                    return False
+                decoded = ubinascii.a2b_base64(token).decode("utf-8")
+                user, _, password = decoded.partition(":")
+                return user == AUTH_USER and password == get_web_password()
+    except Exception:
+        pass
+    return False
 
 
 def url_decode(s):
@@ -173,6 +202,28 @@ def update_wifi(new_ssid, new_password):
     log.print_log(f"WEB 设置 WIFI 值为 {new_ssid} | {mask_password(new_password)}")
 
 
+async def apply_wifi_reconnect():
+    """
+    修改 WiFi 配置后后台重连（不阻塞 Web 请求）。
+    最多等待约 60 秒；仍失败时由 wifi.monitor_wifi 任务继续重试。
+    """
+    try:
+        import wifi
+
+        log.print_log("WiFi 配置已修改，正在重连...")
+        if wifi.sta_if.isconnected():
+            wifi.sta_if.disconnect()
+        wifi.sta_if.connect(config.get_config_value("wifi_ssid"), config.get_config_value("wifi_password"))
+        for _ in range(12):  # 最多等待 60 秒
+            await asyncio.sleep(5)
+            if wifi.sta_if.isconnected():
+                log.print_log(f"WiFi 重连成功: {wifi.sta_if.ifconfig()}")
+                return
+        log.print_log("WiFi 重连超时，将由监控任务继续重试")
+    except Exception as e:
+        log.print_log(f"WiFi 重连失败: {e}")
+
+
 async def handle_client(reader, writer):
     try:
         # 设置超时时间（例如 300 秒）
@@ -198,6 +249,12 @@ async def handle_request(reader, writer):
         method = parts[0]
         path = parts[1]
         # log.print_log(f"路径: {path}")
+
+        # 所有页面都需要 Basic Auth 认证
+        if not is_authorized(request):
+            response = "HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm=\"water-purifier\"\r\nContent-Type: text/html\r\n\r\n<h1>401 Unauthorized</h1>"
+            await writer.awrite(response.encode("utf-8"))
+            return
 
         if path == "/":
             # 主菜单页面
@@ -440,6 +497,13 @@ async def handle_request(reader, writer):
                 html += "<br>"
                 html += "<input type='submit' value='更新'>"
                 html += "</form>"
+
+                html += "<h2>修改 Web 访问密码</h2>"
+                html += "<form method='POST' action='/wifi' onsubmit=\"return confirm('确定修改访问密码吗？');\">"
+                html += "<input type='hidden' name='action' value='update_web_password'>"
+                html += "新密码（4~32 位）: <input type='password' name='new_web_password'>"
+                html += "<input type='submit' value='修改'>"
+                html += "</form>"
                 html += "<br><a href='/'>返回主菜单</a>"
                 html += "</body></html>"
 
@@ -462,16 +526,28 @@ async def handle_request(reader, writer):
 
                 action = params.get("action", "")
                 if action == "update_wifi" and "new_wifi_ssid" in params and "new_wifi_password" in params:
-                    log.print_log(params)
                     new_ssid = params["new_wifi_ssid"]
                     new_password = params["new_wifi_password"]
                     if validate_wifi(new_ssid, new_password):
                         update_wifi(new_ssid, new_password)
-                        html += "<p>更新成功。</p>"
+                        asyncio.create_task(apply_wifi_reconnect())  # 后台重连，无需重启
+                        html += "<p>更新成功，正在重连...</p>"
                     else:
                         html += "<p>更新失败。</p>"
                         html += "<p>名称或密码不合法。</p>"
 
+                    html += "<a href='/wifi'>返回WIFI配置页面</a><br>"
+                    html += "<a href='/'>返回主菜单</a>"
+                    html += "</body></html>"
+                    await writer.awrite(html.encode("utf-8"))
+                elif action == "update_web_password" and "new_web_password" in params:
+                    new_password = params["new_web_password"]
+                    if 4 <= len(new_password) <= 32:
+                        config.set_web_password(new_password)
+                        log.print_log("WEB 访问密码已修改")
+                        html += "<p>访问密码修改成功，下次访问请使用新密码。</p>"
+                    else:
+                        html += "<p>密码长度需为 4~32 位。</p>"
                     html += "<a href='/wifi'>返回WIFI配置页面</a><br>"
                     html += "<a href='/'>返回主菜单</a>"
                     html += "</body></html>"
