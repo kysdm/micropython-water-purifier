@@ -35,6 +35,8 @@ async def main():
 
         oled.display_fill()  # 清空屏幕
         oled.init()
+        asyncio.create_task(oled.orbit_task())  # 像素偏移，防止 OLED 烧屏
+        asyncio.create_task(oled.auto_off_task())  # 夜间自动熄屏，防止 OLED 烧屏
         asyncio.create_task(water.timed_refresh_of_cartridge_usage_time())  # 启动定时刷新滤芯使用时间
         asyncio.create_task(water.refresh_tds_value())  # 启动刷新TDS值任务
         asyncio.create_task(wifi.monitor_wifi())  # 监控WiFi连接状态，自动重连

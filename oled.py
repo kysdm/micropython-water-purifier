@@ -1,9 +1,11 @@
+import asyncio
 import time
 
 import log
 import font
 import threadsafe_context
 import ssd1306
+import time_utils
 
 from machine import Pin
 from machine import SoftI2C
@@ -22,6 +24,22 @@ display = ssd1306.SSD1306_I2C(width, height, i2c)
 
 # 屏幕亮度降级标志（供 lower_screen_brightness 使用）
 lower_screen_brightness_tag = False
+
+# ---- OLED 防烧屏配置 ----
+SCREEN_BRIGHTNESS = 0x4D  # 正常显示亮度（原 0x7F，降至约 30%，减缓像素老化）
+NIGHT_START_HOUR = 22  # 夜间自动熄屏开始时间（24 小时制）
+NIGHT_END_HOUR = 6  # 夜间自动熄屏结束时间
+ORBIT_INTERVAL_S = 5 * 60  # 像素偏移间隔（秒）
+ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循环位置（横向 3 档 x 纵向 2 档）
+ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（夜间也会点亮）
+WAKE_GRACE_S = 60  # 状态回到空闲后，屏幕继续点亮的时间（秒），方便查看最终数值
+
+_shift_x = 0  # 当前像素偏移量
+_shift_y = 0
+_screen_powered = True  # 屏幕供电状态
+_screen_wake = False  # 是否因运行状态（制水/冲洗等）需要保持屏幕点亮
+_screen_grace_until = 0  # 空闲后允许继续点亮的截止时刻（ticks_ms）
+_last_values = {}  # 最近一次各显示项的值，偏移/唤醒后用于重绘
 
 
 def reset_i2c_bus(scl_pin, sda_pin, num_clocks=9):
@@ -95,8 +113,8 @@ def draw_chinese(ch_str, x_axis, y_axis):
             while len(b_) < 8:
                 b_ = "0" + b_
             for x in range(0, 8):
-                display.pixel(x_axis + x + offset_, y + y_axis, int(a_[x]))  # 文字的上半部分
-                display.pixel(x_axis + x + offset_ + 8, y + y_axis, int(b_[x]))  # 文字的下半部分
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 文字的上半部分
+                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, int(b_[x]))  # 文字的下半部分
 
         offset_ += 16
 
@@ -121,8 +139,8 @@ def draw_chinese_small(ch_str, x_axis, y_axis):
                 b_ = "0" + b_
 
             for x in range(0, 8):
-                display.pixel(x_axis + x + offset_, y + y_axis, int(a_[x]))  # 文字的左半部分
-                display.pixel(x_axis + x + offset_ + 8, y + y_axis, int(b_[x]))  # 文字的右半部分
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 文字的左半部分
+                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, int(b_[x]))  # 文字的右半部分
 
         offset_ += 12  # 调整水平偏移量为12
 
@@ -147,7 +165,7 @@ def draw_english(text, x_axis, y_axis):
                 a_ = "0" + a_
 
             for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_, y + y_axis, int(a_[x]))  # 绘制上半部分的像素
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 绘制上半部分的像素
 
         offset_ += 8  # 每个字符宽度为 8 像素
 
@@ -171,7 +189,7 @@ def draw_english_small(text, x_axis, y_axis):
                 a_ = "0" + a_
 
             for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_, y + y_axis, int(a_[x]))  # 绘制上半部分的像素
+                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, int(a_[x]))  # 绘制上半部分的像素
 
         offset_ += 8  # 每个字符宽度为 8 像素
 
@@ -184,11 +202,11 @@ def draw_vertical_line(x, y_start, y_end):
     :param y_end: 竖线的结束 Y 坐标
     """
     for y in range(y_start, y_end):
-        display.pixel(x, y, 1)  # 设定竖线上的每个像素为亮
+        display.pixel(x + _shift_x, y + _shift_y, 1)  # 设定竖线上的每个像素为亮
 
 
-def init():
-    # 固定不变的部分
+def _draw_static_layout():
+    # 固定不变的部分（带偏移量，供像素偏移防烧屏）
     draw_english("PP", 2, 0)
     draw_english("UDF", 2, 12)
     draw_english("CTO", 2, 24)
@@ -215,16 +233,16 @@ def init():
     draw_english("C", 119, 32)
 
     draw_vertical_line(65, 0, height)
-    # 上边框
-    display.hline(0, 0, width, 1)
-    # 下边框
-    display.hline(0, height - 1, width, 1)
-    # 左边框
-    display.vline(0, 0, height, 1)
-    # 右边框
-    display.vline(width - 1, 0, height, 1)
+    # 上边框（偏移后右侧/下侧边框会被裁剪 1~2 像素，属预期）
+    display.hline(_shift_x, _shift_y, width, 1)
+    display.hline(_shift_x, _shift_y + height - 1, width, 1)
+    display.vline(_shift_x, _shift_y, height, 1)
+    display.vline(_shift_x + width - 1, _shift_y, height, 1)
 
-    display.contrast(0x7F)  # 80%亮度
+
+def init():
+    _draw_static_layout()
+    display.contrast(SCREEN_BRIGHTNESS)  # 降低默认亮度，减缓像素老化
 
     display_show()
 
@@ -233,6 +251,7 @@ async def display_cartridge_pp_usage_time(var):
     def display_cartridge_pp_usage_time_sync(var):
         """显示PP滤芯使用时间"""
         var = int(var)
+        _last_values["pp"] = var
         draw_english_small(f"{var:4}", 31, 2)
         display_show()
 
@@ -243,6 +262,7 @@ async def display_cartridge_udf_usage_time(var):
     def display_cartridge_udf_usage_time_sync(var):
         """显示UDF滤芯使用时间"""
         var = int(var)
+        _last_values["udf"] = var
         draw_english_small(f"{var:4}", 31, 14)
         display_show()
 
@@ -253,6 +273,7 @@ async def display_cartridge_cto_usage_time(var):
     def display_cartridge_cto_usage_time_sync(var):
         """显示CTO滤芯使用时间"""
         var = int(var)
+        _last_values["cto"] = var
         draw_english_small(f"{var:4}", 31, 26)
         display_show()
 
@@ -263,6 +284,7 @@ async def display_cartridge_ro_usage_time(var):
     def display_cartridge_ro_usage_time_sync(var):
         """显示RO滤芯使用时间"""
         var = int(var)
+        _last_values["ro"] = var
         draw_english_small(f"{var:4}", 31, 38)
         display_show()
 
@@ -273,6 +295,7 @@ async def display_cartridge_t33_usage_time(var):
     def display_cartridge_t33_usage_time_sync(var):
         """显示T33滤芯使用时间"""
         var = int(var)
+        _last_values["t33"] = var
         draw_english_small(f"{var:4}", 31, 51)
         display_show()
 
@@ -284,6 +307,7 @@ async def display_pure_water_tds_value(var):
         """显示纯水TDS值"""
         var = int(var)
         var = min(var, 999)
+        _last_values["pure_tds"] = var
         draw_english_small(f"{var:3}", 100, 4)
         display_show()
 
@@ -295,6 +319,7 @@ async def display_of_wastewater_tds_value(var):
         """显示废水TDS值"""
         var = int(var)
         var = min(var, 999)
+        _last_values["waste_tds"] = var
         draw_english_small(f"{var:3}", 100, 19)
         display_show()
 
@@ -305,6 +330,7 @@ async def display_water_temperature(var):
     def display_water_temperature_sync(var):
         """显示水温"""
         var = int(var)
+        _last_values["temp"] = var
         draw_english_small(f"{var:2}", 99, 35)
         display_show()
 
@@ -313,8 +339,16 @@ async def display_water_temperature(var):
 
 async def display_countdown_time(var):
     def display_countdown_time_sync(var):
-        """显示倒计时时间"""
+        """显示倒计时时间（纯数字：>= 60 秒时传分钟，< 60 秒时传秒）；倒计时期间点亮并保持屏幕"""
+        global _screen_wake, _screen_powered
+
         var = int(var)
+        _last_values["countdown"] = var
+        # 倒计时进行中：保持屏幕点亮（倒计时结束后"洗膜"状态会继续接管）
+        _screen_wake = True
+        if not _screen_powered:
+            power_on()
+            log.print_log("屏幕已点亮（泡膜倒计时）")
         draw_english_small("   ", 99, 50)
         draw_english_small(f"{var:3}", 99, 51)
         display_show()
@@ -324,16 +358,113 @@ async def display_countdown_time(var):
 
 async def display_status(var):
     def display_status_sync(var):
-        """显示现在工作状态"""
+        """显示现在工作状态；制水等运行状态变化时点亮屏幕（夜间也亮）"""
+        global _screen_wake, _screen_grace_until, _screen_powered
+
+        _last_values["status"] = var
+        if var in ACTIVE_STATUSES:
+            # 运行中：保持屏幕点亮
+            _screen_wake = True
+            if not _screen_powered:
+                power_on()  # 点亮并重绘全部内容（含最新状态）
+                log.print_log(f"屏幕已点亮（{var}）")
+                return
+        elif _screen_wake:
+            # 结束运行：进入空闲宽限期，期间保持点亮
+            _screen_wake = False
+            _screen_grace_until = time.ticks_ms() + WAKE_GRACE_S * 1000
         draw_chinese_small(var, 99, 50)
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_status_sync, var=var)
 
 
+def _draw_value(key, var):
+    """按 key 重绘某一个显示项（供像素偏移/唤醒后恢复画面）"""
+    if key == "status":
+        draw_chinese_small(str(var), 99, 50)
+        return
+    var = int(var)
+    if key == "pp":
+        draw_english_small(f"{var:4}", 31, 2)
+    elif key == "udf":
+        draw_english_small(f"{var:4}", 31, 14)
+    elif key == "cto":
+        draw_english_small(f"{var:4}", 31, 26)
+    elif key == "ro":
+        draw_english_small(f"{var:4}", 31, 38)
+    elif key == "t33":
+        draw_english_small(f"{var:4}", 31, 51)
+    elif key == "pure_tds":
+        draw_english_small(f"{min(var, 999):3}", 100, 4)
+    elif key == "waste_tds":
+        draw_english_small(f"{min(var, 999):3}", 100, 19)
+    elif key == "temp":
+        draw_english_small(f"{var:2}", 99, 35)
+    elif key == "countdown":
+        draw_english_small("   ", 99, 50)
+        draw_english_small(f"{var:3}", 99, 51)
+
+
+def redraw_all():
+    """清屏并重绘静态布局与最近一次的全部动态值（像素偏移或唤醒时调用）"""
+    display.fill(0)
+    _draw_static_layout()
+    for key in ("pp", "udf", "cto", "ro", "t33", "pure_tds", "waste_tds", "temp", "countdown", "status"):
+        if key in _last_values:
+            _draw_value(key, _last_values[key])
+    display.contrast(SCREEN_BRIGHTNESS)
+    display_show()
+
+
 def power_off():
-    # 关闭屏幕
+    # 关闭屏幕（像素停止发光，防止烧屏；显存内容保留）
+    global _screen_powered
     display.poweroff()
+    _screen_powered = False
+
+
+def power_on():
+    # 打开屏幕并重绘当前画面
+    global _screen_powered
+    display.poweron()
+    redraw_all()
+    _screen_powered = True
+
+
+async def orbit_task():
+    """像素偏移任务（防烧屏）：周期切换偏移位置并重绘，均摊固定元素的像素负载"""
+    global _shift_x, _shift_y
+    idx = 0
+    while True:
+        await asyncio.sleep(ORBIT_INTERVAL_S)
+        idx = (idx + 1) % len(ORBIT_POSITIONS)
+        _shift_x, _shift_y = ORBIT_POSITIONS[idx]
+        if _screen_powered:
+            redraw_all()
+
+
+async def auto_off_task():
+    """自动熄屏任务（防烧屏）：夜间关闭屏幕；制水等运行状态或宽限期内保持点亮"""
+    while True:
+        try:
+            hour = time.localtime(time.time() + time_utils.TIMEZONE_OFFSET)[3]
+            is_night = hour >= NIGHT_START_HOUR or hour < NIGHT_END_HOUR
+            if is_night:
+                now = time.ticks_ms()
+                keep_on = _screen_wake or time.ticks_diff(now, _screen_grace_until) < 0
+                if keep_on and not _screen_powered:
+                    power_on()
+                    log.print_log("屏幕已点亮（运行状态）")
+                elif not keep_on and _screen_powered:
+                    power_off()
+                    log.print_log("夜间自动熄屏（防烧屏）")
+            elif not _screen_powered:
+                power_on()
+                log.print_log("屏幕已唤醒")
+        except Exception as e:
+            log.print_log(f"自动熄屏任务错误: {e}")
+        await asyncio.sleep(30)
 
 
 def lower_screen_brightness():
