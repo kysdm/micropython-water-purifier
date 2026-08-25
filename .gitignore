@@ -1,0 +1,12 @@
+# VS Code MicroPython 插件自动生成的历史备份
+.history/
+
+# 设备运行时日志（会随固件运行产生，不入库）
+logs/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 运行时配置：包含 WiFi 密码等敏感信息，由 config.py 在设备上自动生成
+config.json
