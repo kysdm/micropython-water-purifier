@@ -25,7 +25,7 @@ def connect_wifi_sync():
             except Exception:
                 pass
             time.sleep(5)
-            for i in range(5 * 60 / 5):  # 最多等待 5 分钟
+            for i in range(60):  # 最多等待 5 分钟（每 5 秒检查一次，共 60 次）
                 if not sta_if.isconnected():
                     print_log(f"等待 Wi-Fi 连接...，已等待 {i * 5} 秒")
                     time.sleep(5)

@@ -5,13 +5,12 @@ import asyncio
 from io import StringIO
 
 import pins
-import water
 import time_utils
 
 LOG_SAVE_PATH = "/logs"
 LOG_FILE_PATH = "/logs/log.txt"
-MAX_LOG_SIZE = 1024 * 200  # 设置最大日志文件大小为512KB
-MAX_LOG_HISTORY = 5  # 保留最近3个日志文件
+MAX_LOG_SIZE = 1024 * 200  # 设置最大日志文件大小为200KB
+MAX_LOG_HISTORY = 5  # 保留最近5个日志文件
 # 设置时区偏移（单位：秒）
 TIMEZONE_OFFSET = 8 * 3600  # 例如，UTC+8
 
@@ -59,9 +58,12 @@ def file_exists(file_path):
 
 
 def get_state():
+    # 延迟导入，避免与 water.py 形成循环依赖
+    import water
+
     state_list = []
 
-    state_list.append("进水√" if pins.low_pressure_switch.value() == 0 else "出水×")
+    state_list.append("进水√" if pins.low_pressure_switch.value() == 0 else "进水×")
     state_list.append("制水√" if pins.high_pressure_switch.value() == 0 else "制水×")
     state_list.append("压力桶进水√" if pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value() == 1 else "压力桶进水×")
     state_list.append("压力桶出水√" if pins.pressure_bucket_to_water_outlet_solenoid_valve_switch.value() == 1 else "压力桶出水×")

@@ -54,7 +54,7 @@ async def main():
             await asyncio.sleep(10)  # 主循环保持运行
 
     except KeyboardInterrupt:
-        await print_log("程序停止")
+        print_log("程序停止")
 
 
 # 运行主程序

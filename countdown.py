@@ -18,58 +18,6 @@ def format_time(seconds):
     return f"{hours:02}:{minutes:02}:{seconds:02}"
 
 
-# 倒计时函数
-# async def countdown(seconds, stop_event, after_func):
-#     # _seconds = seconds  # 保存原始秒数
-#     while seconds >= 0:
-#         if stop_event.is_set():  # 检查是否触发终止事件
-#             log.print_log("倒计时被终止！")
-#             return
-#         # 格式化并打印剩余时间
-#         oled.show_current_time(format_time(seconds))
-#         await asyncio.sleep(1)  # 每1秒钟检查一次
-#         seconds -= 1
-
-#     log.print_log("倒计时结束！")
-#     await after_func()  # 倒计时结束后调用后续函数
-#     oled.show_program_done() # 显示程序结束
-
-
-# async def countdown(seconds, stop_event, after_func):
-#     start_time = time.ticks_ms()  # 记录起始时间（毫秒）
-#     end_time = time.ticks_add(start_time, seconds * 1000)  # 计算倒计时结束的时间点
-
-#     while True:
-#         if stop_event.is_set():  # 检查是否触发终止事件
-#             log.print_log("倒计时被终止！")
-#             return
-
-#         # 计算剩余时间
-#         now = time.ticks_ms()
-#         remaining_time = time.ticks_diff(end_time, now) // 1000  # 剩余秒数
-
-#         if remaining_time < 0:
-#             break  # 倒计时结束
-#         else:
-#             await oled.display_countdown_time(math.ceil(remaining_time / 60))  # 显示分钟数
-
-#         await asyncio.sleep(1)
-
-#     log.print_log("倒计时结束！")
-#     await after_func()  # 倒计时结束后调用后续函数
-
-
-# async def start(after_func):
-#     minute = config.get_countdown_time()
-
-#     seconds = minute * 60  # 将倒计时转换为秒
-
-#     stop_event.clear()
-#     await asyncio.sleep(15)
-#     countdown_task = asyncio.create_task(countdown(seconds, stop_event, after_func))
-#     await countdown_task
-
-
 async def countdown(seconds: int, stop_event: asyncio.Event, after_func) -> None:
     """
     倒计时任务：以秒为单位倒计时，每秒更新剩余时间（以分钟为单位）显示到 OLED 上。
@@ -105,7 +53,7 @@ async def countdown(seconds: int, stop_event: asyncio.Event, after_func) -> None
 async def start(after_func) -> None:
     """
     启动倒计时任务：
-    - 先等待 15 秒，如果期间 stop_event 触发，则提前终止
+    - 先等待 30 秒，如果期间 stop_event 触发，则提前终止
     - 之后开始倒计时
     """
 

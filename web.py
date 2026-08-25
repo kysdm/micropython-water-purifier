@@ -45,16 +45,37 @@ def validate_wifi(ssid: str, password: str) -> bool:
     return True
 
 
-# def create_snapshot_file(file_path, snapshot_path):
-#     """
-#     创建快照文件。
-#     """
-#     with open(file_path, "rb") as src, open(snapshot_path, "wb") as dst:
-#         while True:
-#             chunk = src.read(512)
-#             if not chunk:
-#                 break
-#             dst.write(chunk)
+def url_decode(s):
+    """
+    简单的 URL 解码：+ 还原为空格，%XX 还原为原始字节（兼容 UTF-8 中文）。
+    """
+    s = s.replace("+", " ")
+    out = bytearray()
+    i = 0
+    length = len(s)
+    while i < length:
+        ch = s[i]
+        if ch == "%" and i + 2 < length:
+            try:
+                out.append(int(s[i + 1:i + 3], 16))
+                i += 3
+                continue
+            except ValueError:
+                pass
+        out.extend(ch.encode("utf-8"))
+        i += 1
+    return out.decode("utf-8")
+
+
+def mask_password(password):
+    """
+    掩码显示密码：仅保留前 2 位和后 2 位，中间用 * 代替。
+    """
+    if not password:
+        return ""
+    if len(password) <= 4:
+        return "*" * len(password)
+    return password[:2] + "*" * (len(password) - 4) + password[-2:]
 
 
 # 获取滤芯使用时间（单位：天）
@@ -149,7 +170,7 @@ def update_wifi(new_ssid, new_password):
     更新 WIFI 配置。
     """
     config.set_wifi(new_ssid, new_password)
-    log.print_log(f"WEB 设置 WIFI 值为 {new_ssid} | {new_password}")
+    log.print_log(f"WEB 设置 WIFI 值为 {new_ssid} | {mask_password(new_password)}")
 
 
 async def handle_client(reader, writer):
@@ -193,7 +214,10 @@ async def handle_request(reader, writer):
 
         elif path == "/logs":
             # 日志列表页面
-            files = os.listdir("/logs")
+            try:
+                files = os.listdir("/logs")
+            except OSError:
+                files = []
             log_files = [f for f in files if f.endswith(".txt") and not f.startswith("snapshot_")]
             header = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
             header += "<html><head><meta charset='utf-8'><title>日志列表</title></head><body>"
@@ -212,6 +236,12 @@ async def handle_request(reader, writer):
         elif path.startswith("/logs/") and path != "/logs":
             # 下载单个日志文件
             file_name = path[len("/logs/") :]
+            # 防路径穿越：仅允许 .txt 日志文件名
+            if "/" in file_name or "\\" in file_name or ".." in file_name or not file_name.endswith(".txt"):
+                response = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n<h1>File not found</h1>"
+                await writer.awrite(response.encode("utf-8"))
+                return
+
             file_path = "/logs/" + file_name
             log.print_log(f"文件路径: {file_path}")
 
@@ -318,7 +348,7 @@ async def handle_request(reader, writer):
                 for pair in post_body.split("&"):
                     if "=" in pair:
                         key, value = pair.split("=", 1)
-                        params[key] = value  # 这里未做URL解码处理
+                        params[key] = url_decode(value)  # URL 解码（+ → 空格，%XX → 字节）
 
                 html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                 html += "<html><head><meta charset='utf-8'><title>Status Updated</title></head><body>"
@@ -400,7 +430,7 @@ async def handle_request(reader, writer):
                 html += "<html><head><meta charset='utf-8'><title>WIFI配置</title></head><body>"
                 html += "<h1>WIFI配置</h1>"
                 html += f"<p>当前 WIFI 名称: {config.get_config_value('wifi_ssid')}</p>"
-                html += f"<p>当前 WIFI 密码: {config.get_config_value('wifi_password')}</p>"
+                html += f"<p>当前 WIFI 密码: {mask_password(config.get_config_value('wifi_password'))}</p>"
                 html += "<form method='POST' action='/wifi' onsubmit=\"return confirm('确定更新WIFI吗？');\">"
                 html += "<input type='hidden' name='action' value='update_wifi'>"
                 html += "<br>"
@@ -424,7 +454,7 @@ async def handle_request(reader, writer):
                 for pair in post_body.split("&"):
                     if "=" in pair:
                         key, value = pair.split("=", 1)
-                        params[key] = value  # 这里未做URL解码处理
+                        params[key] = url_decode(value)  # URL 解码（+ → 空格，%XX → 字节）
 
                 html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                 html += "<html><head><meta charset='utf-8'><title>Status Updated</title></head><body>"

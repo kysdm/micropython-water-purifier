@@ -20,6 +20,9 @@ height = 64
 i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
 display = ssd1306.SSD1306_I2C(width, height, i2c)
 
+# 屏幕亮度降级标志（供 lower_screen_brightness 使用）
+lower_screen_brightness_tag = False
+
 
 def reset_i2c_bus(scl_pin, sda_pin, num_clocks=9):
     """
@@ -60,7 +63,7 @@ def display_show():
         display.show()
         # 正常使用 oled
     except OSError as e:
-        log.print_sync(f"I2C 通信错误: {e}")
+        log.print_log(f"I2C 通信错误: {e}")
         reset_i2c_bus(2, 1)
         # 复位后重新初始化 SoftI2C 对象
         i2c = SoftI2C(sda=Pin(1), scl=Pin(2))
