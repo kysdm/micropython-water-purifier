@@ -149,23 +149,46 @@ def load_saved_time():
 def apply_saved_time():
     """
     断电后 RTC 丢失时，用上次保存的时间恢复近似时钟。
-    仅在上电复位（PWRON_RESET）且 RTC 尚未同步时生效；
-    近似误差 = 断电时长，NTP 同步成功后自动校准。
-    返回是否已应用。
+    适用场景：
+      - RTC 已清零（上电复位等）：备份值 + 开机以来运行秒数；
+      - RTC 值异常（与备份相差约 8 小时，疑似时区污染）：用备份纠正。
+    近似误差 = 断电时长；NTP 同步成功后自动校准。返回是否已应用。
     """
     import machine
+
+    def _set_rtc(approx):
+        # 必须写入 UTC 分量：gmtime 与 ntptime 一致（纯 UTC）；
+        # 个别固件的 localtime 会带本地时区偏移（如 UTC+8），写入后回读校验，失败则回退
+        t = time.gmtime(approx)
+        # 星期字段与 ntptime.settime() 保持一致
+        machine.RTC().datetime((t[0], t[1], t[2], t[6] + 1, t[3], t[4], t[5], 0))
+        if abs(time.time() - approx) > 3600:
+            t = time.localtime(approx)
+            machine.RTC().datetime((t[0], t[1], t[2], t[6] + 1, t[3], t[4], t[5], 0))
+        return abs(time.time() - approx) <= 3600
+
     try:
-        if machine.reset_cause() != machine.PWRON_RESET:
-            return False  # 软复位/看门狗复位等场景 RTC 仍有效，无需恢复
-        if time.time() >= MIN_VALID_TIMESTAMP:
-            return False  # RTC 已有有效时间
         saved = load_saved_time()
         if saved is None:
             return False
-        approx = saved + int(time.time())  # 上次保存值 + 本次开机以来的运行秒数
-        t = time.localtime(approx)
-        # 星期字段与 ntptime.settime() 保持一致
-        machine.RTC().datetime((t[0], t[1], t[2], t[6] + 1, t[3], t[4], t[5], 0))
+        rtc_now = int(time.time())
+
+        if rtc_now >= MIN_VALID_TIMESTAMP:
+            # RTC 里已有"看起来有效"的时间：与备份比较判断是否被污染
+            diff = abs(rtc_now - saved)
+            if abs(diff - 8 * 3600) <= 2 * 3600:
+                # 与备份相差约 8 小时 = 时区污染特征（备份每小时更新，正常差值不会接近 8h）
+                import log  # 延迟导入，避免循环依赖（log 依赖 time_utils）
+                log.print_log(f"检测到 RTC 时间异常（与备份相差约 8 小时），用备份纠正: {saved}")
+                approx = saved
+            else:
+                return False  # RTC 正常（软复位等场景保留值有效），无需恢复
+        else:
+            # RTC 已清零（上电复位）：备份值 + 开机以来运行秒数
+            approx = saved + rtc_now
+
+        if not _set_rtc(approx):
+            return False  # 写入后回读校验失败，放弃（等待 NTP 校准）
         return True
     except Exception:
         return False

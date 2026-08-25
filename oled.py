@@ -12,7 +12,7 @@ from machine import SoftI2C
 # from pins import i2c
 
 
-# 屏幕的宽度和高度
+# 屏幕尺寸：0.96 寸 SSD1306，分辨率 128×64
 width = 128
 height = 64
 
@@ -389,6 +389,28 @@ async def display_countdown_time(var):
         display_show()
 
     await threadsafe_context.external_hardware.assign(display_countdown_time_sync, var=var)
+
+
+def display_countdown_time_direct(var):
+    """
+    同步直绘倒计时数字（不经工作线程队列）。
+    倒计时要求严格每秒刷新，队列等待（如 TDS 读取占用）会导致跳秒；
+    I2C 事务极短（毫秒级），与工作线程并发写入冲突概率低，且 display_show 自带异常恢复。
+    """
+    global _screen_wake, _screen_powered
+
+    if not _ensure_display():
+        return
+    var = int(var)
+    _last_values["countdown"] = var
+    # 倒计时进行中：保持屏幕点亮（倒计时结束后"洗膜"状态会继续接管）
+    _screen_wake = True
+    if not _screen_powered:
+        power_on()
+        log.print_log("屏幕已点亮（泡膜倒计时）")
+    draw_english_small("   ", 99, 50)
+    draw_english_small(f"{var:3}", 99, 51)
+    display_show()
 
 
 async def display_status(var):

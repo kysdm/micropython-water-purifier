@@ -42,7 +42,8 @@ async def countdown(seconds: int, stop_event: asyncio.Event, after_func) -> None
 
         # 值变化时才刷新屏幕（分钟慢刷、秒快刷，刷新频率即单位提示）
         if display_value != last_displayed_value:
-            await oled.display_countdown_time(display_value)
+            # 同步直绘：不走工作线程队列，避免被 TDS 读取排队阻塞导致跳秒
+            oled.display_countdown_time_direct(display_value)
             last_displayed_value = display_value
 
         await asyncio.sleep(1)

@@ -8,7 +8,7 @@
 - RO 膜强制冲洗、开机冲洗
 - 纯水泡膜（洗膜）自动流程（TDS 达标/超时退出）
 - 双通道 TDS / 水温监测（UART 传感器）
-- SSD1306 OLED 中文界面（128×64）
+- 0.96 寸 SSD1306 OLED 中文界面（128×64，I2C）
 - OLED 防烧屏：像素偏移 + 空闲自动熄屏 + 亮度控制
 - 内置 Web 管理服务器（端口 80）：滤芯状态、参数设置、WiFi 配置、日志下载
 - WiFi 自动连接/断线重连，NTP 自动校时
@@ -48,7 +48,7 @@
 | 废水阀 | GPIO10（输出） | |
 | 进水电磁阀 | GPIO13（输出） | |
 | TDS 传感器 | UART1：TX=GPIO17，RX=GPIO18，9600bps | 双通道协议 |
-| OLED | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64 |
+| OLED（0.96 寸） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64 |
 | RGB LED | GPIO48 | WS2812B 单灯 |
 
 RGB LED 颜色含义：
