@@ -49,8 +49,24 @@
 | 进水电磁阀 | GPIO13（输出） | |
 | TDS 传感器 | UART1：TX=GPIO17，RX=GPIO18，9600bps | 双通道协议 |
 | OLED（0.96 寸，默认） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [screen.py](screen.py) 顶部 `OLED_PINS` 配置（默认 SDA=1/SCL=2） |
-| TFT（可选，1.8 寸） | SPI：SCLK/MOSI/CS/DC/RST/BL | ST7735 128×160 全彩；引脚在 [screen.py](screen.py) 顶部 `TFT_PINS` 配置（默认 7/8/14/15/16/21），坐标偏移 `TFT_X_OFFSET`/`TFT_Y_OFFSET`、颜色顺序 `TFT_BGR` 同处配置，两块屏硬件只接一块 |
+| TFT（可选，1.8 寸） | SPI：SCL(SCLK)/SDA(MOSI)/CS/DC/RST/BLK | ST7735 128×160 全彩；引脚在 [screen.py](screen.py) 顶部 `TFT_PINS` 配置（默认 7/8/14/15/16/21），坐标偏移 `TFT_X_OFFSET`/`TFT_Y_OFFSET`、颜色顺序 `TFT_BGR` 同处配置，两块屏硬件只接一块 |
 | RGB LED | GPIO48 | WS2812B 单灯 |
+
+> TFT 模块（1.8 寸）常见的 8 脚丝印为 `SCL`/`SDA`，这是模块厂家的习惯命名——`SCL` 即 SPI 时钟 SCK，`SDA` 即 SPI 数据 MOSI（屏幕只写不读，故无 MISO）。与代码 `TFT_PINS` 的对应关系：
+
+| 模块丝印 | 含义 | 接线 |
+|---|---|---|
+| GND | 地 | GND |
+| VCC | 电源（3.3V） | 3.3V |
+| SCL | SPI 时钟 SCK | GPIO7 |
+| SDA | SPI 数据 MOSI | GPIO8 |
+| RST | 复位 | GPIO16 |
+| DC | 数据/命令选择 | GPIO15 |
+| CS | 片选 | GPIO14 |
+| BLK | 背光（高电平点亮） | GPIO21 |
+
+> ⚠️ VCC 接 3.3V；BLK 必须接 GPIO21（熄屏时拉低关背光），悬空则背光常亮、熄屏失效。
+
 
 RGB LED 颜色含义：
 

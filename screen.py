@@ -9,6 +9,8 @@ import time
 # ---- 屏幕选择（烧录固件前在此决定，硬件上只接一块屏）----
 DISPLAY_TYPE = "oled"  # "oled" = SSD1306 I2C；"tft" = ST7735 SPI（1.8 寸 128×160）
 OLED_PINS = {"sda": 1, "scl": 2}  # OLED I2C 引脚，按实际接线修改
+# TFT SPI 引脚。模块丝印习惯标 SCL/SDA，即 SPI 的 SCK/MOSI；
+# 与模块丝印对照：SCL=sclk(7) SDA=mosi(8) CS=14 DC=15 RST=16 BLK=bl(21)，VCC 接 3.3V、GND 接地
 TFT_PINS = {"sclk": 7, "mosi": 8, "cs": 14, "dc": 15, "rst": 16, "bl": 21}  # TFT SPI 引脚，按实际接线修改
 TFT_X_OFFSET = 0  # 部分 1.8 寸模块显示左移/上移时需要 1~2 像素偏移
 TFT_Y_OFFSET = 0
