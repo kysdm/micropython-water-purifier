@@ -8,12 +8,9 @@ import screen
 
 from time_utils import TIMEZONE_OFFSET
 
-# from pins import i2c
-
 
 # 逻辑布局宽度：128（SSD1306 全屏；ST7735 纵向布局见 _layout()）
 width = 128
-height = 64
 
 
 # 屏幕延迟初始化：模块导入时不访问硬件，避免屏幕缺失导致开机崩溃
@@ -160,7 +157,6 @@ def draw_english(text, x_axis, y_axis, color=1):
     offset_ = 0  # 用于字符之间的偏移量
     for char in text:
         ascii_code = ord(char)  # 获取字符的 ASCII 编码
-        #       print(ascii_code)
         byte_data = font.byte2.get(ascii_code, [0] * 16)  # 获取字符点阵数据（8x16 位图）
 
         # 绘制每一行的像素
@@ -207,23 +203,6 @@ def draw_english_small(text, x_axis, y_axis, color=1):
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
-def draw_english_tiny(text, x_axis, y_axis, color=1):
-    """绘制 5×7 微型英文字符（用于 IP 等紧凑信息）"""
-    if not _ensure_display():
-        return
-    offset_ = 0
-    for char in text:
-        byte_data = font.tiny.get(ord(char), [0] * 7)
-        for y in range(0, 7):
-            a_ = bin(byte_data[y]).replace("0b", "")
-            while len(a_) < 8:
-                a_ = "0" + a_
-            for x in range(0, 5):
-                if int(a_[x]):
-                    display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color)
-        offset_ += 5
-
-
 def draw_vertical_line(x, y_start, y_end, color=1):
     """
     绘制一条竖线。
@@ -238,18 +217,26 @@ def draw_vertical_line(x, y_start, y_end, color=1):
 
 
 def _layout():
-    """按屏幕类型返回布局坐标（y 轴）。
-
-    OLED（128×64）：紧凑布局；TFT（128×160）：纵向拉满 + 底部信息栏。
-    """
+    """按屏幕类型返回布局坐标（y 轴）。"""
     if screen.get_type() == "tft":
         return {
-            "filter_y": [0, 26, 52, 78, 104],       # PP/UDF/CTO/RO/T33 标签
-            "filter_val_y": [2, 28, 54, 80, 106],   # 对应数值
-            "right_y": [2, 30, 58, 86],             # 纯水/废水/温度/状态 标签
-            "right_val_y": [4, 32, 60, 88],         # 对应数值
-            "temp_unit_y": 56,                      # °C 位置
-            "bar_y": [120, 134, 148],               # 底部信息栏三行（时间|星期 / 信号强度 / IP）
+            "filter_y": [0, 12, 24, 36, 49],       # PP/UDF/CTO/RO/T33 标签
+            "filter_val_y": [2, 14, 26, 38, 51],   # 对应数值
+            "right_y": [2, 18, 34, 50],            # 纯水/废水/温度/状态 标签
+            "right_val_y": [4, 19, 35, 50],        # 对应数值
+            "temp_unit_y": 32,                     # °C 位置
+            # TFT 底部信息栏（最终绘制坐标，OLED 无此栏）
+            "bar": {
+                "line_y": 64,      # 与主区分隔的横线
+                "clear_y": 65,     # 清空区域顶边
+                "clear_h": 94,     # 清空区域高度（到底边）
+                "time_y": 74,      # 日期时间行
+                "signal_y": 104,   # 信号强度行
+                "ip_y": 130,       # IP 行
+                "time_ip_x": 6,    # 日期时间 / IP 左对齐 x
+                "signal_x": 8,     # 信号文字 x
+                "icon_x": 104,     # 信号图标 x（右对齐）
+            },
         }
     return {
         "filter_y": [0, 12, 24, 36, 49],
@@ -257,7 +244,7 @@ def _layout():
         "right_y": [2, 18, 34, 50],
         "right_val_y": [4, 19, 35, 50],
         "temp_unit_y": 32,
-        "bar_y": None,  # OLED 无底部信息栏
+        "bar": None,  # OLED 无底部信息栏
     }
 
 
@@ -267,15 +254,10 @@ def _draw_static_layout():
     ly = _layout()
     screen_h = display.height
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
-    draw_english("PP", 2, ly["filter_y"][0])
-    draw_english("UDF", 2, ly["filter_y"][1])
-    draw_english("CTO", 2, ly["filter_y"][2])
-    draw_english("RO", 2, ly["filter_y"][3])
-    draw_english("T", 2, ly["filter_y"][4])
+    for i, label in enumerate(("PP :", "UDF:", "CTO:", "RO :", "T  :")):
+        draw_english(label, 2, ly["filter_y"][i])
+    # T33 数字用 12px 小字号，下移 2px 与 16px 标签底边对齐
     draw_english_small("33", 9, ly["filter_y"][4] + 2)
-
-    for i in range(5):
-        draw_english_small(":", 25, ly["filter_y"][i])
 
     draw_chinese_small("纯水", 67, ly["right_y"][0])
     draw_chinese_small("废水", 67, ly["right_y"][1])
@@ -293,6 +275,10 @@ def _draw_static_layout():
     display.hline(_shift_x, _shift_y + screen_h - 1, width, 1)
     display.vline(_shift_x, _shift_y, screen_h, 1)
     display.vline(_shift_x + width - 1, _shift_y, screen_h, 1)
+
+    if ly["bar"]:
+        # TFT 底部信息栏分隔横线（OLED 无此栏）
+        display.hline(_shift_x, ly["bar"]["line_y"], width, 1)
 
 
 def init():
@@ -504,7 +490,7 @@ def _draw_bottom_bar_sync():
     if not _ensure_display():
         return
     ly = _layout()
-    bar = ly["bar_y"]
+    bar = ly["bar"]
     if not bar:
         return
     import wifi
@@ -512,7 +498,7 @@ def _draw_bottom_bar_sync():
     if wifi.sta_if.isconnected():
         try:
             rssi = wifi.sta_if.status("rssi")  # 信号强度（dBm，负值）
-            status = f"WIFI {rssi}dBm"
+            status = f"WIFI:{rssi}dBm"
             if rssi >= -60:
                 bar_color = 0x07E0  # 绿：信号好
             elif rssi >= -80:
@@ -539,14 +525,14 @@ def _draw_bottom_bar_sync():
         date_time_str = "--/--/-- --:--"
 
     # 清空三行区域并重绘
-    display.fill_rect(0, bar[0], width, 36, 0)
+    display.fill_rect(1, bar["clear_y"], width - 2, bar["clear_h"], 0)
     # 第一行：日期 + 时间（8px）
-    draw_english_small(date_time_str, 2, bar[0])
+    draw_english(date_time_str, bar["time_ip_x"], bar["time_y"])
     # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
-    draw_english_small(status, 2, bar[1], color=bar_color)
-    _draw_signal_icon(width - 2 - _SIGNAL_ICON_W, bar[1], bar_color)
-    # 第三行：IP 地址（微型字体，"IP: " 前缀）
-    draw_english_tiny("IP: " + ip, 2, bar[2])
+    draw_english(status, bar["signal_x"], bar["signal_y"], color=bar_color)
+    _draw_signal_icon(bar["icon_x"], bar["signal_y"], bar_color)
+    # 第三行：IP 地址
+    draw_english(ip, bar["time_ip_x"], bar["ip_y"])
     display_show()
 
 
@@ -559,7 +545,7 @@ def redraw_all():
     for key in ("pp", "udf", "cto", "ro", "t33", "pure_tds", "waste_tds", "temp", "countdown", "status"):
         if key in _last_values:
             _draw_value(key, _last_values[key])
-    if _layout()["bar_y"]:
+    if _layout()["bar"]:
         _draw_bottom_bar_sync()  # TFT 底部信息栏（自带 display_show）
     display.contrast(SCREEN_BRIGHTNESS)
     display_show()
@@ -651,10 +637,3 @@ def display_fill():
         return
     display.fill(0)
 
-
-if __name__ == "__main__":
-    import asyncio
-
-    init()
-    # display_text("Hello, world!", 0, 0)
-    asyncio.run(display_pure_water_tds_value(123))
