@@ -27,6 +27,8 @@ _last_tds_error_log = 0  # TDS 错误日志限流时间戳（ticks_ms）
 
 
 water_running = False  # False 表示停止，True 表示正在制水
+filling_bucket = False  # True = 水龙头已关闭，正在为压力桶注水
+_filling_settle_until = 0  # 注水启动后的压力稳定截止时刻（ticks_ms），防开桶阀瞬间高压误判桶满
 
 
 async def start_water_production():
@@ -40,10 +42,11 @@ async def start_water_production():
         high_pressure = pins.high_pressure_switch.value()  # 0 表示压力未达标
 
         if low_pressure == 1:
-            # 缺水状态，无论是否在制水，都需要停止制水，并等待进水恢复
+            # 缺水状态，无论直供还是注水，都需要停止制水，并等待进水恢复
             if water_running:
                 await stop_water_actions()
                 water_running = False
+            filling_bucket = False
             log.print_log("缺水，停止制水.")
             forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
             await waiting_for_water_intake_to_recover()  # 等待进水恢复
@@ -51,18 +54,27 @@ async def start_water_production():
             log.print_log("进水压力达标，可以开始制水。")
 
         elif high_pressure == 0 and not water_running:
-            # 开始制水
+            # 水龙头打开，开始制水（直供模式：不开压力桶进水阀，避免分流影响水龙头水流）
             forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
+            filling_bucket = False
             await start_water_actions()
             water_running = True
 
-        elif high_pressure == 1 and water_running:
-            # 水龙头关闭，高压开关打开，制水完成
-            await stop_water_actions()
-            water_running = False
-            forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
-            asyncio.create_task(countdown.start(pure_water_reflow_ro))
-            log.print_log("停止制水.")
+        elif high_pressure == 1 and water_running and not filling_bucket:
+            # 水龙头关闭：不立即停机，切换为注水模式（泵保持，打开压力桶进水阀注水）
+            await start_filling_bucket()
+            filling_bucket = True
+            log.print_log("水龙头关闭，开始为压力桶注水.")
+
+        elif high_pressure == 1 and water_running and filling_bucket:
+            # 注水中压力再次达标：压力桶已注满（跳过开桶阀后的压力稳定窗口）
+            if time.ticks_diff(time.ticks_ms(), _filling_settle_until) > 0:
+                await stop_water_actions()
+                water_running = False
+                filling_bucket = False
+                forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
+                asyncio.create_task(countdown.start(pure_water_reflow_ro))
+                log.print_log("压力桶注满，停止制水.")
 
         await asyncio.sleep(0.5)
 
@@ -73,13 +85,21 @@ async def start_water_actions():
 
     pins.water_inlet_solenoid_valve_switch.value(1)  # 打开进水电磁阀
     pins.pressure_bucket_to_water_outlet_solenoid_valve_switch.value(0)  # 关闭压力桶出水电磁阀
-    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1)  # 打开压力桶进水电磁阀
+    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(0)  # 关闭压力桶进水电磁阀（直供模式，水龙头关闭后再开阀注水）
     pins.booster_pump_solenoid_valve_switch.value(1)  # 打开增压泵电磁阀
 
     timer.start()  # 开始计时
     led.set_color(199, 18, 184)  # 设置LED为紫色，表示制水中
     await screen_ui.display_status("制水")
     log.print_log("开始制水.")
+
+
+async def start_filling_bucket():
+    """水龙头关闭后切换为注水模式：泵与进水阀保持开启，打开压力桶进水阀为桶注水"""
+    global _filling_settle_until
+    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1)  # 打开压力桶进水电磁阀
+    # 开阀后管路压力需要时间回落到桶压，此窗口内高压=1 不判定为桶满
+    _filling_settle_until = time.ticks_add(time.ticks_ms(), 5000)
 
 
 async def stop_water_actions():
