@@ -12,7 +12,7 @@ sta_if = network.WLAN(network.STA_IF)
 sta_if.active(True)
 
 
-# 连接到 Wi-Fi
+# 连接到 Wi-Fi；返回 True 表示已连接，False 表示连接失败
 def connect_wifi_sync():
     try:
         if not sta_if.isconnected():
@@ -32,13 +32,16 @@ def connect_wifi_sync():
                 else:
                     print_log("Wi-Fi 连接成功")
                     print_log(f"WIFI 信息: {sta_if.ifconfig()}")
-                    return
-            raise Exception("连接超时")
+                    return True
+            print_log("连接 Wi-Fi 超时")
+            return False
         else:
             print_log("Wi-Fi 已连接")
             print_log(f"WIFI 信息: {sta_if.ifconfig()}")
+            return True
     except Exception as e:
         print_log(f"连接 Wi-Fi 发生异常: {e}")
+        return False
 
 
 async def connect_wifi():

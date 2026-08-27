@@ -32,18 +32,21 @@ async def main():
 
         # 连接WiFi
         screen_ui.display_text("wifi connection", 3, 30)
-        wifi.connect_wifi_sync()
-        # 同步NTP时间（有限次数尝试；失败则用本地近似时间继续启动，不再阻塞）
+        wifi_connected = wifi.connect_wifi_sync()
+        # 同步NTP时间（仅WiFi已连接时尝试；未连接则跳过，由定时任务在连网后重试）
         screen_ui.display_fill()  # 清空屏幕
-        screen_ui.display_text("ntp time sync", 3, 30)
-        time_synced = False
-        for _ in range(NTP_SYNC_ATTEMPTS):
-            if ntp.sync_time_sync() == "ok":
-                time_synced = True
-                break
-            await asyncio.sleep(10)
-        if not time_synced:
-            log.print_log("NTP 同步失败，以本地近似时间继续启动（将每 10 分钟重试同步）")
+        if wifi_connected:
+            screen_ui.display_text("ntp time sync", 3, 30)
+            time_synced = False
+            for _ in range(NTP_SYNC_ATTEMPTS):
+                if ntp.sync_time_sync() == "ok":
+                    time_synced = True
+                    break
+                await asyncio.sleep(10)
+            if not time_synced:
+                log.print_log("NTP 同步失败，以本地近似时间继续启动（将每 10 分钟重试同步）")
+        else:
+            log.print_log("WiFi 未连接，跳过开机 NTP 同步（连网后由定时任务自动同步）")
 
         screen_ui.display_fill()  # 清空屏幕
         screen_ui.init()
