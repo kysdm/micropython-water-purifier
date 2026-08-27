@@ -391,8 +391,13 @@ async def display_countdown_time(var):
         # 倒计时进行中：保持屏幕点亮（倒计时结束后"洗膜"状态会继续接管）
         _screen_wake = True
         if not _screen_powered:
+            # 先在显存画上倒计时数字再点亮（全屏重绘较慢，避免点亮瞬间显示熄灭前的旧画面）
+            draw_english_small("   ", 99, _layout()["right_val_y"][3])
+            draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
+            display_show()
             power_on()
             log.print_log("屏幕已点亮（泡膜倒计时）")
+            return
         draw_english_small("   ", 99, _layout()["right_val_y"][3])
         draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
         display_show()
@@ -415,8 +420,13 @@ def display_countdown_time_direct(var):
     # 倒计时进行中：保持屏幕点亮（倒计时结束后"洗膜"状态会继续接管）
     _screen_wake = True
     if not _screen_powered:
+        # 先在显存画上倒计时数字再点亮（全屏重绘较慢，避免点亮瞬间显示熄灭前的旧画面）
+        draw_english_small("   ", 99, _layout()["right_val_y"][3])
+        draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
+        display_show()
         power_on()
         log.print_log("屏幕已点亮（泡膜倒计时）")
+        return
     draw_english_small("   ", 99, _layout()["right_val_y"][3])
     draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
     display_show()
@@ -432,7 +442,10 @@ async def display_status(var):
             # 运行中：保持屏幕点亮
             _screen_wake = True
             if not _screen_powered:
-                power_on()  # 点亮并重绘全部内容（含最新状态）
+                # 先在显存画上最新状态再点亮（全屏重绘较慢，避免点亮瞬间显示熄灭前的旧状态）
+                draw_chinese_small(var, 99, _layout()["right_val_y"][3], color=STATUS_COLORS.get(var, 0xFFFF))
+                display_show()
+                power_on()  # 点亮并重绘全部内容（状态已正确）
                 log.print_log(f"屏幕已点亮（{var}）")
                 return
         elif _screen_wake:
