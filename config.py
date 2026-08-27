@@ -124,8 +124,8 @@ def get_t33():
 def set_tds(tds):
     # 限定 tds 的取值范围在 5 到 30 之间
     tds = max(5, min(tds, 30))
-    # 互斥：洗膜目标TDS 不能高于注水TDS（压力桶注水的水质要求更严格）
-    tds = min(tds, get_fill_tds())
+    # 互斥：洗膜目标TDS 不能低于注水TDS（注水水质不高于洗膜完成标准）
+    tds = max(tds, get_fill_tds())
     update_config("tds", tds)
 
 
@@ -138,8 +138,8 @@ def get_fill_tds():
 def set_fill_tds(new_tds):
     # 限定 fill_tds 的取值范围在 1 到 20 之间
     new_tds = max(1, min(new_tds, 20))
-    # 互斥：注水TDS 不能低于洗膜目标TDS（极端情况下允许突破 20 上限以保持约束）
-    new_tds = max(new_tds, get_tds())
+    # 互斥：注水TDS 不能高于洗膜目标TDS（纯水应比洗膜完成的废水更干净）
+    new_tds = min(new_tds, get_tds())
     update_config("fill_tds", new_tds)
 
 

@@ -369,7 +369,7 @@ async def handle_request(reader, writer):
                 html += "</form>"
 
                 html += "<h2>纯水洗膜目标TDS设置 （单位：ppm）</h2>"
-                html += f"<p>当前TDS: {tds} ppm（须 ≤ 注水TDS）</p>"
+                html += f"<p>当前TDS: {tds} ppm（须 ≥ 注水TDS）</p>"
                 html += "<form method='POST' action='/status' onsubmit=\"return confirm('确定更新TDS吗？');\">"
                 html += "<input type='hidden' name='action' value='update_tds'>"
                 html += "新TDS <5~30>: <input type='text' name='new_tds'>"
@@ -377,7 +377,7 @@ async def handle_request(reader, writer):
                 html += "</form>"
 
                 html += "<h2>压力桶注水TDS设置 （单位：ppm）</h2>"
-                html += f"<p>当前注水TDS: {config.get_fill_tds()} ppm（须 ≥ 洗膜目标TDS）</p>"
+                html += f"<p>当前注水TDS: {config.get_fill_tds()} ppm（须 ≤ 洗膜目标TDS）</p>"
                 html += "<form method='POST' action='/status' onsubmit=\"return confirm('确定更新注水TDS吗？');\">"
                 html += "<input type='hidden' name='action' value='update_fill_tds'>"
                 html += "新注水TDS <1~20>: <input type='text' name='new_fill_tds'>"

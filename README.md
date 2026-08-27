@@ -241,8 +241,8 @@ stateDiagram-v2
 | `wifi_ssid` | esp32 | 1~32 字符 | WiFi 名称（不支持中文） |
 | `wifi_password` | 12345678 | 8~63 字符 | WiFi 密码 |
 | `web_password` | admin | 4~32 字符 | Web 管理访问密码（Basic Auth，/wifi 页面可修改） |
-| `tds` | 10 | 5~30 | 纯水泡膜目标废水 TDS（ppm）；与注水TDS互斥：**须 ≤ 注水TDS**，Web 设置时自动钳制 |
-| `fill_tds` | 10 | 1~20 | 压力桶注水纯水 TDS 阈值（ppm），不达标不注水；与洗膜目标TDS互斥：**须 ≥ 洗膜目标TDS**，Web 设置时自动钳制 |
+| `tds` | 10 | 5~30 | 纯水泡膜目标废水 TDS（ppm）；与注水TDS互斥：**须 ≥ 注水TDS**，Web 设置时自动钳制 |
+| `fill_tds` | 10 | 1~20 | 压力桶注水纯水 TDS 阈值（ppm），不达标不注水；与洗膜目标TDS互斥：**须 ≤ 洗膜目标TDS**，Web 设置时自动钳制 |
 | `countdown_time` | 45 | 1~3600 | 洗膜倒计时时长（秒） |
 | `pure_water_ro_clean_timeout` | 5 | 1~10 | 泡膜最长运行时间（分钟） |
 | `ro_force_clean_time` | 30 | 1~60 | 累计制水达到该分钟数后强制冲洗 RO 膜 |
