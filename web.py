@@ -1,6 +1,5 @@
 import asyncio
 import os
-import re
 import ubinascii
 
 import log
@@ -27,17 +26,21 @@ def file_exists(file_path):
 def validate_wifi(ssid: str, password: str) -> bool:
     """
     验证 WiFi 名称和密码是否合法
-    :param ssid: WiFi 名称，要求非空、不超过 32 个字符，且只能包含英文、数字及部分常见符号
+    :param ssid: WiFi 名称，要求非空、UTF-8 编码后不超过 32 字节（硬件上限）；
+                 支持中文（1 汉字占 3 字节，最多约 10 个汉字），但不建议使用中文（老路由器 GBK 编码不兼容）
     :param password: WiFi 密码，要求长度在 8 到 63 个字符之间
     :return: 合法返回 True，否则返回 False
     """
-    # 检查 ssid 长度
-    if not isinstance(ssid, str) or len(ssid) == 0 or len(ssid) > 32:
+    # 检查 ssid：非空、UTF-8 字节数不超过 32、不含控制字符
+    if not isinstance(ssid, str) or len(ssid) == 0:
         return False
-
-    # 允许的字符：英文、数字、空格，以及 !@#$%^&*()_+-=
-    pattern = r"^[a-zA-Z0-9\s!@#$%^&*()_\+\-=]+$"
-    if not re.match(pattern, ssid) or len(ssid) != len(re.match(pattern, ssid).group(0)):
+    try:
+        ssid_bytes = ssid.encode("utf-8")
+    except Exception:
+        return False
+    if len(ssid_bytes) > 32:
+        return False
+    if any(ord(ch) < 32 for ch in ssid):
         return False
 
     # 检查密码
@@ -513,7 +516,7 @@ async def handle_request(reader, writer):
                 html += "<form method='POST' action='/wifi' onsubmit=\"return confirm('确定更新WIFI吗？');\">"
                 html += "<input type='hidden' name='action' value='update_wifi'>"
                 html += "<br>"
-                html += "新 WIFI 名称 (不支持中文): <input type='text' name='new_wifi_ssid'>"
+                html += "新 WIFI 名称（支持中文但不建议使用；≤32字节≈10个汉字）: <input type='text' name='new_wifi_ssid'>"
                 html += "<br>"
                 html += "新 WIFI 密码: <input type='text' name='new_wifi_password'>"
                 html += "<br>"

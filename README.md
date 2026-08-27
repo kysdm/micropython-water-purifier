@@ -238,7 +238,7 @@ stateDiagram-v2
 
 | 字段 | 默认值 | 范围 | 说明 |
 |---|---|---|---|
-| `wifi_ssid` | esp32 | 1~32 字符 | WiFi 名称；支持 UTF-8 中文（1 汉字占 3 字节，最多约 10 个汉字；需路由器为 UTF-8 编码） |
+| `wifi_ssid` | esp32 | 1~32 字符 | WiFi 名称；支持 UTF-8 中文但**不建议使用**（1 汉字占 3 字节，最多约 10 个汉字；老路由器 GBK 编码不兼容） |
 | `wifi_password` | 12345678 | 8~63 字符 | WiFi 密码 |
 | `web_password` | admin | 4~32 字符 | Web 管理访问密码（Basic Auth，/wifi 页面可修改） |
 | `tds` | 10 | 5~30 | 纯水泡膜目标废水 TDS（ppm）；与注水TDS互斥：**须 ≥ 注水TDS**，Web 设置时自动钳制 |
