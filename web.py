@@ -369,10 +369,18 @@ async def handle_request(reader, writer):
                 html += "</form>"
 
                 html += "<h2>纯水洗膜目标TDS设置 （单位：ppm）</h2>"
-                html += f"<p>当前TDS: {tds} ppm</p>"
+                html += f"<p>当前TDS: {tds} ppm（须 ≤ 注水TDS）</p>"
                 html += "<form method='POST' action='/status' onsubmit=\"return confirm('确定更新TDS吗？');\">"
                 html += "<input type='hidden' name='action' value='update_tds'>"
                 html += "新TDS <5~30>: <input type='text' name='new_tds'>"
+                html += "<input type='submit' value='更新'>"
+                html += "</form>"
+
+                html += "<h2>压力桶注水TDS设置 （单位：ppm）</h2>"
+                html += f"<p>当前注水TDS: {config.get_fill_tds()} ppm（须 ≥ 洗膜目标TDS）</p>"
+                html += "<form method='POST' action='/status' onsubmit=\"return confirm('确定更新注水TDS吗？');\">"
+                html += "<input type='hidden' name='action' value='update_fill_tds'>"
+                html += "新注水TDS <1~20>: <input type='text' name='new_fill_tds'>"
                 html += "<input type='submit' value='更新'>"
                 html += "</form>"
 
@@ -444,6 +452,20 @@ async def handle_request(reader, writer):
                         log.print_log("无效的TDS数值")
                         html += "<h1>状态更新失败</h1>"
                         html += "<p>无效的TDS数值</p>"
+                    html += "<a href='/status'>返回滤芯状态页面</a><br>"
+                    html += "<a href='/'>返回主菜单</a>"
+                    html += "</body></html>"
+                    await writer.awrite(html.encode("utf-8"))
+                elif action == "update_fill_tds" and "new_fill_tds" in params:
+                    try:
+                        new_fill_tds = int(params["new_fill_tds"])
+                        config.set_fill_tds(new_fill_tds)
+                        html += "<h1>状态更新成功</h1>"
+                        html += "<p>操作成功。</p>"
+                    except ValueError:
+                        log.print_log("无效的注水TDS数值")
+                        html += "<h1>状态更新失败</h1>"
+                        html += "<p>无效的注水TDS数值</p>"
                     html += "<a href='/status'>返回滤芯状态页面</a><br>"
                     html += "<a href='/'>返回主菜单</a>"
                     html += "</body></html>"

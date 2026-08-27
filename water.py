@@ -63,10 +63,35 @@ async def start_water_production():
             water_running = True
 
         elif high_pressure == 1 and water_running and not filling_bucket:
-            # 水龙头关闭：不立即停机，切换为注水模式（泵保持，打开压力桶进水阀注水）
-            await start_filling_bucket()
-            filling_bucket = True
-            log.print_log("水龙头关闭，开始为压力桶注水.")
+            # 水龙头关闭：纯水 TDS 达标才注水（压力桶的水用于纯水洗膜，需保证水质）
+            skip_reason = None
+            if not tds_values_ready:
+                # 等待首批 TDS 数据（最多 30 秒）；期间用户重新打开水龙头则保持直供
+                wait_start = time.ticks_ms()
+                while not tds_values_ready:
+                    if pins.high_pressure_switch.value() == 0:
+                        skip_reason = "keep"  # 龙头重新打开，保持制水
+                        break
+                    if time.ticks_diff(time.ticks_ms(), wait_start) > 30000:
+                        skip_reason = "等待 TDS 数据超时"
+                        break
+                    await asyncio.sleep(0.5)
+                    watchdog.feed()
+            if skip_reason is None:
+                if purified_water_tds_value <= config.get_fill_tds():
+                    await start_filling_bucket()
+                    filling_bucket = True
+                    log.print_log("水龙头关闭，开始为压力桶注水.")
+                else:
+                    skip_reason = "纯水TDS不达标（{} > {}）".format(purified_water_tds_value, config.get_fill_tds())
+            if skip_reason is not None and skip_reason != "keep":
+                # 跳过注水，直接停机（与注满停机一致：进入强制冲洗 + 纯水泡膜流程）
+                await stop_water_actions()
+                water_running = False
+                filling_bucket = False
+                forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
+                asyncio.create_task(countdown.start(pure_water_reflow_ro))
+                log.print_log(f"{skip_reason}，跳过注水，停止制水.")
 
         elif high_pressure == 1 and water_running and filling_bucket:
             # 注水中压力再次达标：

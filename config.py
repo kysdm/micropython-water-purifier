@@ -6,7 +6,7 @@ from time_utils import get_current_timestamp
 
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
-DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin"}
+DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin"}
 REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
 
 # 缓存配置数据
@@ -124,7 +124,23 @@ def get_t33():
 def set_tds(tds):
     # 限定 tds 的取值范围在 5 到 30 之间
     tds = max(5, min(tds, 30))
+    # 互斥：洗膜目标TDS 不能高于注水TDS（压力桶注水的水质要求更严格）
+    tds = min(tds, get_fill_tds())
     update_config("tds", tds)
+
+
+def get_fill_tds():
+    # 压力桶注水纯水 TDS 阈值；旧配置无此字段时使用默认值
+    value = get_config_value("fill_tds")
+    return value if isinstance(value, int) else DEFAULT_CONFIG["fill_tds"]
+
+
+def set_fill_tds(new_tds):
+    # 限定 fill_tds 的取值范围在 1 到 20 之间
+    new_tds = max(1, min(new_tds, 20))
+    # 互斥：注水TDS 不能低于洗膜目标TDS（极端情况下允许突破 20 上限以保持约束）
+    new_tds = max(new_tds, get_tds())
+    update_config("fill_tds", new_tds)
 
 
 def set_countdown_time(countdown_time):
