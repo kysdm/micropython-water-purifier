@@ -283,8 +283,12 @@ def _draw_static_layout():
 
 
 def init():
+    global _screen_grace_until
     if not _ensure_display():
         return
+    # 开机宽限期：NTP 同步完成后 auto_off_task 与开机冲洗存在调度竞争，
+    # 避免 auto_off_task 首次检查（grace 仍为 0）立即误熄屏
+    _screen_grace_until = time.ticks_add(time.ticks_ms(), IDLE_TIMEOUT_S * 1000)
     _draw_static_layout()
     display.contrast(SCREEN_BRIGHTNESS)  # 降低默认亮度，减缓像素老化
 
