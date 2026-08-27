@@ -405,33 +405,6 @@ async def display_countdown_time(var):
     await threadsafe_context.external_hardware.assign(display_countdown_time_sync, var=var)
 
 
-def display_countdown_time_direct(var):
-    """
-    同步直绘倒计时数字（不经工作线程队列）。
-    倒计时要求严格每秒刷新，队列等待（如 TDS 读取占用）会导致跳秒；
-    I2C 事务极短（毫秒级），与工作线程并发写入冲突概率低，且 display_show 自带异常恢复。
-    """
-    global _screen_wake, _screen_powered
-
-    if not _ensure_display():
-        return
-    var = int(var)
-    _last_values["countdown"] = var
-    # 倒计时进行中：保持屏幕点亮（倒计时结束后"洗膜"状态会继续接管）
-    _screen_wake = True
-    if not _screen_powered:
-        # 先在显存画上倒计时数字再点亮（全屏重绘较慢，避免点亮瞬间显示熄灭前的旧画面）
-        draw_english_small("   ", 99, _layout()["right_val_y"][3])
-        draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
-        display_show()
-        power_on()
-        log.print_log("屏幕已点亮（泡膜倒计时）")
-        return
-    draw_english_small("   ", 99, _layout()["right_val_y"][3])
-    draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
-    display_show()
-
-
 async def display_status(var):
     def display_status_sync(var):
         """显示现在工作状态；制水等运行状态变化时点亮屏幕（夜间也亮）"""
@@ -596,7 +569,7 @@ async def orbit_task():
             idx = (idx + 1) % len(ORBIT_POSITIONS)
             _shift_x, _shift_y = ORBIT_POSITIONS[idx]
             if _screen_powered:
-                redraw_all()
+                await threadsafe_context.external_hardware.assign(redraw_all)
         except Exception as e:
             log.print_log(f"像素偏移任务错误: {e}")
 
@@ -608,10 +581,11 @@ async def auto_off_task():
             now = time.ticks_ms()
             keep_on = _screen_wake or time.ticks_diff(now, _screen_grace_until) < 0
             if keep_on and not _screen_powered:
-                power_on()
+                # 走工作线程串行操作屏幕总线，避免与显示任务并发导致死机
+                await threadsafe_context.external_hardware.assign(power_on)
                 log.print_log("屏幕已点亮（运行状态）")
             elif not keep_on and _screen_powered:
-                power_off()
+                await threadsafe_context.external_hardware.assign(power_off)
                 log.print_log("空闲超时，自动熄屏（防烧屏）")
         except Exception as e:
             log.print_log(f"自动熄屏任务错误: {e}")
