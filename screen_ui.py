@@ -233,7 +233,8 @@ def _layout():
                 "time_y": 74,      # 日期时间行
                 "signal_y": 104,   # 信号强度行
                 "ip_y": 130,       # IP 行
-                "time_ip_x": 6,    # 日期时间 / IP 左对齐 x
+                "time_x": 6,       # 日期时间 x（独立可调）
+                "ip_x": 4,         # IP x（独立可调）
                 "signal_x": 8,     # 信号文字 x
                 "icon_x": 104,     # 信号图标 x（右对齐）
             },
@@ -527,12 +528,12 @@ def _draw_bottom_bar_sync():
     # 清空三行区域并重绘
     display.fill_rect(1, bar["clear_y"], width - 2, bar["clear_h"], 0)
     # 第一行：日期 + 时间（8px）
-    draw_english(date_time_str, bar["time_ip_x"], bar["time_y"])
+    draw_english(date_time_str, bar["time_x"], bar["time_y"])
     # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
     draw_english(status, bar["signal_x"], bar["signal_y"], color=bar_color)
     _draw_signal_icon(bar["icon_x"], bar["signal_y"], bar_color)
     # 第三行：IP 地址
-    draw_english(ip, bar["time_ip_x"], bar["ip_y"])
+    draw_english(ip, bar["ip_x"], bar["ip_y"])
     display_show()
 
 
@@ -636,4 +637,3 @@ def display_fill():
     if not _ensure_display():
         return
     display.fill(0)
-
