@@ -29,6 +29,11 @@ _last_tds_error_log = 0  # TDS 错误日志限流时间戳（ticks_ms）
 water_running = False  # False 表示停止，True 表示正在制水
 filling_bucket = False  # True = 压力桶进水阀已打开（制水期间纯水TDS达标时注水）
 
+# 注水 TDS 防抖：超标需超过阈值+余量，并持续确认时长后才停止注水（避免阈值附近波动导致阀门频繁开关）
+FILL_TDS_HYSTERESIS = 3  # 关阀超标余量（ppm）：TDS > 阈值+余量 才视为真超标
+FILL_TDS_EXCEED_CONFIRM_MS = 3000  # 超标持续确认时长（毫秒）
+_fill_exceed_since = 0  # 超标开始时刻（ticks_ms）
+
 
 async def start_water_production():
     """制水程序主循环"""
@@ -70,9 +75,9 @@ async def start_water_production():
             log.print_log("水龙头关闭，停止制水.")
 
         elif water_running:
-            # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水
+            # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水（带防抖）
             tds_ok = fill_tds_ok()
-            if tds_ok != filling_bucket:
+            if tds_ok is not None and tds_ok != filling_bucket:
                 pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
                 filling_bucket = tds_ok
                 if tds_ok:
@@ -99,12 +104,34 @@ async def start_water_actions():
 
 
 def fill_tds_ok():
-    """制水期间判断纯水 TDS 是否达标注水：实时值优先，失败用最近可信值；不可信返回 False"""
+    """制水期间判断纯水 TDS 是否达标注水（防抖版）：
+    - ≤ 阈值：达标（立即开阀注水）
+    - 阈值 ~ 阈值+余量（中性带）：保持当前状态，不动作
+    - > 阈值+余量 且持续确认时长：不达标（停止注水）
+    - 实时读取失败用最近可信值；无可信值视为不达标
+    返回值：True=达标，False=不达标，None=保持现状"""
+    global _fill_exceed_since
     fill_tds = config.get_fill_tds()
     tds_value = purified_water_tds_value
     if tds_value >= TDS_INVALID:
         tds_value = get_recent_pure_tds()
-    return tds_value < TDS_INVALID and tds_value <= fill_tds
+    if tds_value >= TDS_INVALID:
+        # 无可信值：视为不达标（防抖计时复位，避免误算持续时长）
+        _fill_exceed_since = 0
+        return False
+    if tds_value <= fill_tds:
+        _fill_exceed_since = 0  # 已恢复达标：复位超标计时
+        return True
+    if tds_value <= fill_tds + FILL_TDS_HYSTERESIS:
+        # 中性带：保持当前状态（不动作、不计时）
+        return None
+    # 真超标：持续确认后才停止注水
+    if _fill_exceed_since == 0:
+        _fill_exceed_since = time.ticks_ms()
+    elif time.ticks_diff(time.ticks_ms(), _fill_exceed_since) >= FILL_TDS_EXCEED_CONFIRM_MS:
+        _fill_exceed_since = 0
+        return False
+    return None
 
 
 async def stop_water_actions():
