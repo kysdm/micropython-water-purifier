@@ -11,7 +11,7 @@ import countdown
 import log
 
 from pins import rgb_led
-from tds import get_tds_and_temperature, TDS_INVALID
+from tds import get_tds_and_temperature, TDS_INVALID, get_recent_pure_tds
 from timer import Timer
 from ws2812b import WS2812B
 
@@ -78,17 +78,25 @@ async def start_water_production():
                     await asyncio.sleep(0.5)
                     watchdog.feed()
             if skip_reason is None:
-                if purified_water_tds_value <= config.get_fill_tds():
+                fill_tds = config.get_fill_tds()
+                tds_value = purified_water_tds_value
+                tds_note = ""
+                if tds_value >= TDS_INVALID:
+                    # 实时读取失败：尝试最近几秒内的可信值
+                    recent = get_recent_pure_tds()
+                    if recent < TDS_INVALID:
+                        tds_value = recent
+                        tds_note = f"（实时读取失败，使用最近可信值 {recent}）"
+                    else:
+                        tds_value = None  # 无可信值：水质未知，拒绝注水
+                if tds_value is None:
+                    skip_reason = "TDS 读取失败且无最近可信值"
+                elif tds_value <= fill_tds:
                     await start_filling_bucket()
                     filling_bucket = True
-                    log.print_log("水龙头关闭，开始为压力桶注水.")
-                elif purified_water_tds_value >= TDS_INVALID:
-                    # TDS 读取失败占位值（tds.py 解析失败返回 999）：按达标放行，避免传感器偶发失败阻止注水
-                    await start_filling_bucket()
-                    filling_bucket = True
-                    log.print_log("TDS 读取失败，按达标放行注水.")
+                    log.print_log(f"水龙头关闭，开始为压力桶注水{tds_note}.")
                 else:
-                    skip_reason = "纯水TDS不达标（{} > {}）".format(purified_water_tds_value, config.get_fill_tds())
+                    skip_reason = "纯水TDS不达标（{} > {}）".format(tds_value, fill_tds)
             if skip_reason is not None and skip_reason != "keep":
                 # 跳过注水，直接停机（与注满停机一致：进入强制冲洗 + 纯水泡膜流程）
                 await stop_water_actions()

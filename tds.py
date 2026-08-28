@@ -6,6 +6,13 @@ import log
 from pins import uart
 
 TDS_INVALID = 999  # TDS 读取失败占位值（解析失败/无响应时返回，不代表真实水质）
+RECENT_TDS_MAX_AGE_MS = 15000  # 最近可信 TDS 的有效期（毫秒）；TDS 变化是线性的，15 秒内仍可参考
+
+# 最近成功读取的可信 TDS 缓存（供实时读取失败时使用，如注水瞬间）
+_last_valid_pure_tds = None
+_last_valid_pure_tick = 0
+_last_valid_waste_tds = None
+_last_valid_waste_tick = 0
 
 # TDS 错误日志限流（避免传感器故障时每秒刷屏）
 ERROR_LOG_INTERVAL_MS = 60000
@@ -100,6 +107,15 @@ def get_tds_and_temperature_sync():
     tds1, temp1 = parse_channel_result(send_command(0x05, channel=0x01), channel=1)
     tds2, temp2 = parse_channel_result(send_command(0x05, channel=0x02), channel=2)
 
+    # 缓存最近成功读取的可信值（供注水判断等场景在实时读取失败时使用）
+    global _last_valid_pure_tds, _last_valid_pure_tick, _last_valid_waste_tds, _last_valid_waste_tick
+    if tds1 is not None:
+        _last_valid_pure_tds = tds1
+        _last_valid_pure_tick = time.ticks_ms()
+    if tds2 is not None:
+        _last_valid_waste_tds = tds2
+        _last_valid_waste_tick = time.ticks_ms()
+
     # 使用默认值填充可能解析失败的情况
     tds1 = tds1 if tds1 is not None else default_tds1
     temp1 = temp1 if temp1 is not None else default_temp1
@@ -109,6 +125,13 @@ def get_tds_and_temperature_sync():
     # 计算平均温度并四舍五入
     average_temperature = round((temp1 + temp2) / 2)
     return tds1, tds2, average_temperature
+
+
+def get_recent_pure_tds(max_age_ms=RECENT_TDS_MAX_AGE_MS):
+    """返回有效期内最近成功读取的纯水 TDS；无可信值或已超龄返回 TDS_INVALID"""
+    if _last_valid_pure_tds is not None and time.ticks_diff(time.ticks_ms(), _last_valid_pure_tick) <= max_age_ms:
+        return _last_valid_pure_tds
+    return TDS_INVALID
 
 
 async def get_tds_and_temperature():
