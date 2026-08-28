@@ -96,7 +96,7 @@ async def start_water_production():
         elif high_pressure == 1 and water_running and filling_bucket:
             # 注水中压力再次达标：
             # - 压力曾回落（桶未满、正在注水）→ 真注满，立即停止
-            # - 从未回落（无压力桶/桶已满/管路憋压）→ 短窗口确认后停止
+            # - 从未回落（无压力桶/桶已满/管路憋压/高压阈值过低）→ 短窗口确认后停止
             if _filling_saw_low or time.ticks_diff(time.ticks_ms(), _filling_settle_until) > 0:
                 await stop_water_actions()
                 water_running = False
@@ -104,7 +104,10 @@ async def start_water_production():
                 _filling_saw_low = False
                 forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
                 asyncio.create_task(countdown.start(pure_water_reflow_ro))
-                log.print_log("压力桶注满，停止制水.")
+                if _filling_saw_low:
+                    log.print_log("压力桶注满，停止制水.")
+                else:
+                    log.print_log("注水中压力从未回落（无桶/桶已满/高压阈值过低），停止制水.")
 
         elif high_pressure == 0 and water_running and filling_bucket:
             # 注水中压力回落：桶未满，继续注水；标记后再次升压即真注满
@@ -133,8 +136,9 @@ async def start_filling_bucket():
     global _filling_settle_until, _filling_saw_low
     _filling_saw_low = False  # 新一轮注水：尚未观察到压力回落
     pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1)  # 打开压力桶进水电磁阀
-    # 开阀后若压力一直未回落（无桶/桶已满/管路憋压），此窗口后判定停机；有回落则以回落后的升压为准
-    _filling_settle_until = time.ticks_add(time.ticks_ms(), 2000)
+    # 开阀后若压力一直未回落（无桶/桶已满/高压阈值过低/桶预压偏高），此窗口后判定停机；
+    # 窗口期间即使高压=1 也继续注水数秒（有回落则以回落后的升压为准）
+    _filling_settle_until = time.ticks_add(time.ticks_ms(), 5000)
 
 
 async def stop_water_actions():
