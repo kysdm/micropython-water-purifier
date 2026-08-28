@@ -34,3 +34,10 @@ uart = UART(1, baudrate=9600, tx=Pin(17), rx=Pin(18))
 
 # RGB LED
 rgb_led = Pin(48, Pin.OUT)
+
+# 屏幕引脚（屏幕类型在 screen.py 的 DISPLAY_TYPE 决定，两块屏硬件只接一块）
+# OLED：SSD1306 I2C
+OLED_PINS = {"sda": 1, "scl": 2}  # OLED I2C 引脚，按实际接线修改
+# TFT：ST7735 SPI。模块丝印习惯标 SCL/SDA，即 SPI 的 SCK/MOSI；
+# 与模块丝印对照：SCL=sclk(7) SDA=mosi(8) CS=14 DC=15 RST=16 BLK=bl(21)，VCC 接 3.3V、GND 接地
+TFT_PINS = {"sclk": 7, "mosi": 8, "cs": 14, "dc": 15, "rst": 16, "bl": 21}  # TFT SPI 引脚，按实际接线修改

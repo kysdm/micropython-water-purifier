@@ -6,12 +6,11 @@
 
 import time
 
+import pins
+
 # ---- 屏幕选择（烧录固件前在此决定，硬件上只接一块屏）----
+# 屏幕引脚定义统一在 pins.py（OLED_PINS / TFT_PINS）
 DISPLAY_TYPE = "tft"  # "oled" = SSD1306 I2C；"tft" = ST7735 SPI（1.8 寸 128×160）
-OLED_PINS = {"sda": 1, "scl": 2}  # OLED I2C 引脚，按实际接线修改
-# TFT SPI 引脚。模块丝印习惯标 SCL/SDA，即 SPI 的 SCK/MOSI；
-# 与模块丝印对照：SCL=sclk(7) SDA=mosi(8) CS=14 DC=15 RST=16 BLK=bl(21)，VCC 接 3.3V、GND 接地
-TFT_PINS = {"sclk": 7, "mosi": 8, "cs": 14, "dc": 15, "rst": 16, "bl": 21}  # TFT SPI 引脚，按实际接线修改
 TFT_X_OFFSET = 0  # 部分 1.8 寸模块显示左移/上移时需要 1~2 像素偏移
 TFT_Y_OFFSET = 0
 TFT_BGR = True  # 颜色红蓝互换时改 True（白字界面通常无感，但建议按屏幕实际调）
@@ -33,15 +32,15 @@ class OLEDScreen:
 
         self.width = 128
         self.height = 64
-        self.i2c = SoftI2C(sda=Pin(OLED_PINS["sda"]), scl=Pin(OLED_PINS["scl"]))
+        self.i2c = SoftI2C(sda=Pin(pins.OLED_PINS["sda"]), scl=Pin(pins.OLED_PINS["scl"]))
         self.dev = ssd1306.SSD1306_I2C(self.width, self.height, self.i2c)
 
     def reset_bus(self):
         """复位 SoftI2C 总线（OLED 专用，释放被卡住的从机）"""
         from machine import Pin
 
-        scl = Pin(OLED_PINS["scl"], Pin.OUT, Pin.PULL_UP)
-        sda = Pin(OLED_PINS["sda"], Pin.OUT, Pin.PULL_UP)
+        scl = Pin(pins.OLED_PINS["scl"], Pin.OUT, Pin.PULL_UP)
+        sda = Pin(pins.OLED_PINS["sda"], Pin.OUT, Pin.PULL_UP)
         scl.value(1)
         sda.value(1)
         time.sleep_ms(5)
@@ -162,7 +161,7 @@ def get_screen(force_reinit=False):
     global _screen
     if _screen is None or force_reinit:
         if DISPLAY_TYPE == "tft":
-            _screen = TFTScreen(TFT_PINS)
+            _screen = TFTScreen(pins.TFT_PINS)
         else:
             _screen = OLEDScreen()
     return _screen
