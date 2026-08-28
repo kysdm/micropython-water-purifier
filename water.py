@@ -27,16 +27,14 @@ _last_tds_error_log = 0  # TDS 错误日志限流时间戳（ticks_ms）
 
 
 water_running = False  # False 表示停止，True 表示正在制水
-filling_bucket = False  # True = 水龙头已关闭，正在为压力桶注水
-_filling_settle_until = 0  # 开阀后压力从未回落时的确认窗口截止时刻（ticks_ms）
-_filling_saw_low = False  # 本次注水中是否观察到压力回落（高压=0），True 后再次升压即真注满
+filling_bucket = False  # True = 压力桶进水阀已打开（制水期间纯水TDS达标时注水）
 
 
 async def start_water_production():
     """制水程序主循环"""
     global water_running
     global forced_flush_ro_task
-    global _filling_saw_low
+    global filling_bucket
 
     while True:
         watchdog.feed()  # 喂狗
@@ -44,7 +42,7 @@ async def start_water_production():
         high_pressure = pins.high_pressure_switch.value()  # 0 表示压力未达标
 
         if low_pressure == 1:
-            # 缺水状态，无论直供还是注水，都需要停止制水，并等待进水恢复
+            # 缺水状态：停止制水（含停止注水），并等待进水恢复
             if water_running:
                 await stop_water_actions()
                 water_running = False
@@ -56,75 +54,31 @@ async def start_water_production():
             log.print_log("进水压力达标，可以开始制水。")
 
         elif high_pressure == 0 and not water_running:
-            # 水龙头打开，开始制水（直供模式：不开压力桶进水阀，避免分流影响水龙头水流）
+            # 水龙头打开：开始制水（桶阀初始关闭，制水循环中按 TDS 决定是否注水）
             forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
             filling_bucket = False
             await start_water_actions()
             water_running = True
 
-        elif high_pressure == 1 and water_running and not filling_bucket:
-            # 水龙头关闭：纯水 TDS 达标才注水（压力桶的水用于纯水洗膜，需保证水质）
-            skip_reason = None
-            if not tds_values_ready:
-                # 等待首批 TDS 数据（最多 30 秒）；期间用户重新打开水龙头则保持直供
-                wait_start = time.ticks_ms()
-                while not tds_values_ready:
-                    if pins.high_pressure_switch.value() == 0:
-                        skip_reason = "keep"  # 龙头重新打开，保持制水
-                        break
-                    if time.ticks_diff(time.ticks_ms(), wait_start) > 30000:
-                        skip_reason = "等待 TDS 数据超时"
-                        break
-                    await asyncio.sleep(0.5)
-                    watchdog.feed()
-            if skip_reason is None:
-                fill_tds = config.get_fill_tds()
-                tds_value = purified_water_tds_value
-                tds_note = ""
-                if tds_value >= TDS_INVALID:
-                    # 实时读取失败：尝试最近几秒内的可信值
-                    recent = get_recent_pure_tds()
-                    if recent < TDS_INVALID:
-                        tds_value = recent
-                        tds_note = f"（实时读取失败，使用最近可信值 {recent}）"
-                    else:
-                        tds_value = None  # 无可信值：水质未知，拒绝注水
-                if tds_value is None:
-                    skip_reason = "TDS 读取失败且无最近可信值"
-                elif tds_value <= fill_tds:
-                    await start_filling_bucket()
-                    filling_bucket = True
-                    log.print_log(f"水龙头关闭，开始为压力桶注水{tds_note}.")
-                else:
-                    skip_reason = "纯水TDS不达标（{} > {}）".format(tds_value, fill_tds)
-            if skip_reason is not None and skip_reason != "keep":
-                # 跳过注水，直接停机（与注满停机一致：进入强制冲洗 + 纯水泡膜流程）
-                await stop_water_actions()
-                water_running = False
-                filling_bucket = False
-                forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
-                asyncio.create_task(countdown.start(pure_water_reflow_ro))
-                log.print_log(f"{skip_reason}，跳过注水，停止制水.")
+        elif high_pressure == 1 and water_running:
+            # 水龙头关闭：停止制水（含停止注水），进入强制冲洗 + 纯水泡膜流程
+            await stop_water_actions()
+            water_running = False
+            filling_bucket = False
+            forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
+            asyncio.create_task(countdown.start(pure_water_reflow_ro))
+            log.print_log("水龙头关闭，停止制水.")
 
-        elif high_pressure == 1 and water_running and filling_bucket:
-            # 注水中压力再次达标：
-            # - 压力曾回落（桶未满、正在注水）→ 真注满，立即停止
-            # - 从未回落（无压力桶/桶已满/管路憋压/高压阈值过低）→ 短窗口确认后停止
-            if _filling_saw_low or time.ticks_diff(time.ticks_ms(), _filling_settle_until) > 0:
-                await stop_water_actions()
-                water_running = False
-                filling_bucket = False
-                _filling_saw_low = False
-                forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
-                asyncio.create_task(countdown.start(pure_water_reflow_ro))
-                if _filling_saw_low:
-                    log.print_log("压力桶注满，停止制水.")
+        elif water_running:
+            # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水
+            tds_ok = fill_tds_ok()
+            if tds_ok != filling_bucket:
+                pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
+                filling_bucket = tds_ok
+                if tds_ok:
+                    log.print_log("纯水TDS达标，开始向压力桶注水.")
                 else:
-                    log.print_log("注水中压力从未回落（无桶/桶已满/高压阈值过低），停止制水.")
-
-        elif high_pressure == 0 and water_running and filling_bucket:
-            # 注水中压力回落：桶未满，继续注水；标记后再次升压即真注满
-            _filling_saw_low = True
+                    log.print_log("纯水TDS不达标或不可信，停止向压力桶注水.")
 
         await asyncio.sleep(0.5)
 
@@ -135,7 +89,7 @@ async def start_water_actions():
 
     pins.water_inlet_solenoid_valve_switch.value(1)  # 打开进水电磁阀
     pins.pressure_bucket_to_water_outlet_solenoid_valve_switch.value(0)  # 关闭压力桶出水电磁阀
-    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(0)  # 关闭压力桶进水电磁阀（直供模式，水龙头关闭后再开阀注水）
+    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(0)  # 关闭压力桶进水电磁阀（制水循环中按纯水TDS决定是否注水）
     pins.booster_pump_solenoid_valve_switch.value(1)  # 打开增压泵电磁阀
 
     timer.start()  # 开始计时
@@ -144,14 +98,13 @@ async def start_water_actions():
     log.print_log("开始制水.")
 
 
-async def start_filling_bucket():
-    """水龙头关闭后切换为注水模式：泵与进水阀保持开启，打开压力桶进水阀为桶注水"""
-    global _filling_settle_until, _filling_saw_low
-    _filling_saw_low = False  # 新一轮注水：尚未观察到压力回落
-    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1)  # 打开压力桶进水电磁阀
-    # 开阀后若压力一直未回落（无桶/桶已满/高压阈值过低/桶预压偏高），此窗口后判定停机；
-    # 窗口期间即使高压=1 也继续注水数秒（有回落则以回落后的升压为准）
-    _filling_settle_until = time.ticks_add(time.ticks_ms(), 5000)
+def fill_tds_ok():
+    """制水期间判断纯水 TDS 是否达标注水：实时值优先，失败用最近可信值；不可信返回 False"""
+    fill_tds = config.get_fill_tds()
+    tds_value = purified_water_tds_value
+    if tds_value >= TDS_INVALID:
+        tds_value = get_recent_pure_tds()
+    return tds_value < TDS_INVALID and tds_value <= fill_tds
 
 
 async def stop_water_actions():
