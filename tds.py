@@ -5,6 +5,8 @@ import log
 
 from pins import uart
 
+TDS_INVALID = 999  # TDS 读取失败占位值（解析失败/无响应时返回，不代表真实水质）
+
 # TDS 错误日志限流（避免传感器故障时每秒刷屏）
 ERROR_LOG_INTERVAL_MS = 60000
 _last_error_log_time = 0
@@ -79,8 +81,8 @@ def send_command(command, channel=0x01, data=None):
 
 
 def get_tds_and_temperature_sync():
-    # 默认值
-    default_tds1, default_tds2 = 999, 999
+    # 默认值（读取失败时的占位）
+    default_tds1, default_tds2 = TDS_INVALID, TDS_INVALID
     default_temp1, default_temp2 = 99, 99
 
     def parse_channel_result(result, channel):

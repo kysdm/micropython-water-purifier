@@ -11,7 +11,7 @@ import countdown
 import log
 
 from pins import rgb_led
-from tds import get_tds_and_temperature
+from tds import get_tds_and_temperature, TDS_INVALID
 from timer import Timer
 from ws2812b import WS2812B
 
@@ -82,6 +82,11 @@ async def start_water_production():
                     await start_filling_bucket()
                     filling_bucket = True
                     log.print_log("水龙头关闭，开始为压力桶注水.")
+                elif purified_water_tds_value >= TDS_INVALID:
+                    # TDS 读取失败占位值（tds.py 解析失败返回 999）：按达标放行，避免传感器偶发失败阻止注水
+                    await start_filling_bucket()
+                    filling_bucket = True
+                    log.print_log("TDS 读取失败，按达标放行注水.")
                 else:
                     skip_reason = "纯水TDS不达标（{} > {}）".format(purified_water_tds_value, config.get_fill_tds())
             if skip_reason is not None and skip_reason != "keep":
