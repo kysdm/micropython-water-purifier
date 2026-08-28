@@ -466,12 +466,13 @@ def _draw_value(key, var):
 _SIGNAL_ICON_W = 4 * 3 + 3 * 2  # 4 格信号图标总宽度（每格 3px + 2px 间隙）
 
 
-def _draw_signal_icon(x, y, color):
-    """绘制 4 格信号强度图标（左低右高，梯形），返回图标占用宽度"""
+def _draw_signal_icon(x, y, level, color):
+    """绘制信号强度图标（level=1~4 格，左低右高梯形；level=0 不画），返回图标占用宽度"""
     bar_w = 3
     gap = 2
     heights = [4, 7, 10, 12]
-    for i, h in enumerate(heights):
+    for i in range(level):
+        h = heights[i]
         display.fill_rect(x + i * (bar_w + gap), y + 12 - h, bar_w, h, color)
     return _SIGNAL_ICON_W
 
@@ -492,18 +493,26 @@ def _draw_bottom_bar_sync():
             status = f"WIFI:{rssi}dBm"
             if rssi >= -60:
                 bar_color = 0x07E0  # 绿：信号好
+                level = 4
+            elif rssi >= -70:
+                bar_color = 0xFFE0  # 黄：信号一般
+                level = 3
             elif rssi >= -80:
                 bar_color = 0xFFE0  # 黄：信号一般
+                level = 2
             else:
                 bar_color = 0xF800  # 红：信号差
+                level = 1
         except Exception:
             status = "WIFI ON"
             bar_color = 1
+            level = 4
         ip = wifi.sta_if.ifconfig()[0]
     else:
         status = "WIFI OFF"
         ip = "--"
         bar_color = 1
+        level = 0
 
     # 日期+时间：异常时也照常显示（如时间未同步会显示 00-01-01 00:00 的真实值）
     try:
@@ -521,7 +530,7 @@ def _draw_bottom_bar_sync():
     draw_english(date_time_str, bar["time_x"], bar["time_y"])
     # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
     draw_english(status, bar["signal_x"], bar["signal_y"], color=bar_color)
-    _draw_signal_icon(bar["icon_x"], bar["signal_y"], bar_color)
+    _draw_signal_icon(bar["icon_x"], bar["signal_y"], level, bar_color)
     # 第三行：IP 地址
     draw_english(ip, bar["ip_x"], bar["ip_y"])
     display_show()
