@@ -189,6 +189,8 @@ async def forced_flush_ro():
         log.print_log(f"强制冲洗RO膜发生错误: {e}")
     finally:
         pins.wastewater_solenoid_valve_switch.value(0)  # 关闭废水泵电磁阀
+        pins.booster_pump_solenoid_valve_switch.value(0)  # 关闭增压泵（取消/异常时也关闭，防缺水空转）
+        pins.water_inlet_solenoid_valve_switch.value(0)  # 关闭进水电磁阀（取消/异常时也关闭）
 
 
 async def after_booting_flush_ro():
@@ -208,6 +210,7 @@ async def after_booting_flush_ro():
                     log.print_log("冲洗过程中，进水压力不足，停止冲洗。")
                     pins.booster_pump_solenoid_valve_switch.value(0)  # 关闭增压泵电磁阀
                     pins.wastewater_solenoid_valve_switch.value(0)  # 关闭废水泵电磁阀
+                    pins.water_inlet_solenoid_valve_switch.value(0)  # 关闭进水电磁阀（低压传感器在其上端，断水时开阀无意义）
                     break
                 await asyncio.sleep(1)
                 watchdog.feed()  # 喂狗
