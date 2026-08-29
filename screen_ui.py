@@ -47,14 +47,15 @@ ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循�
 ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（自动点亮并保持）
 
 # TFT 状态文字颜色（RGB565；OLED 单色屏自动忽略，统一白色）
+# 注：ST7735 为 TN 屏视角窄，纯色（单通道）侧面看不清，故用浅色（多通道）保证侧面可读
 STATUS_COLORS = {
-    "制水": 0x07E0,  # 绿
-    "冲洗": 0xFFE0,  # 黄
-    "缺水": 0xF800,  # 红
-    "洗膜": 0x001F,  # 蓝
+    "制水": 0x7FEF,  # 淡绿
+    "冲洗": 0xFFE0,  # 黄（双通道，侧面可读）
+    "缺水": 0xFBCF,  # 淡红
+    "洗膜": 0x7DBF,  # 淡蓝
     "空闲": 0xFFFF,  # 白
-    "超时": 0xFD20,  # 橙
-    "完成": 0x07FF,  # 青
+    "超时": 0xFD20,  # 橙（双通道）
+    "完成": 0x07FF,  # 青（双通道）
 }
 
 _shift_x = 0  # 当前像素偏移量
@@ -492,16 +493,16 @@ def _draw_bottom_bar_sync():
             rssi = wifi.sta_if.status("rssi")  # 信号强度（dBm，负值）
             status = f"WIFI:{rssi}dBm"
             if rssi >= -60:
-                bar_color = 0x07E0  # 绿：信号好
+                bar_color = 0x7FEF  # 淡绿：信号好（TN屏侧面可读）
                 level = 4
             elif rssi >= -70:
-                bar_color = 0xFFE0  # 黄：信号一般
+                bar_color = 0xFEEA  # 淡黄：信号一般
                 level = 3
             elif rssi >= -80:
-                bar_color = 0xFFE0  # 黄：信号一般
+                bar_color = 0xFEEA  # 淡黄：信号一般
                 level = 2
             else:
-                bar_color = 0xF800  # 红：信号差
+                bar_color = 0xFBCF  # 淡红：信号差
                 level = 1
         except Exception:
             status = "WIFI ON"
