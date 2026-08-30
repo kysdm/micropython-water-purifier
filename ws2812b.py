@@ -1,3 +1,7 @@
+# ws2812b.py — WS2812B RGB LED 驱动（MicroPython）
+#
+# 参考教程实现：https://dmccreary.github.io/micropython/basics/05-neopixel/
+#
 # from pins import rgb_led
 import neopixel
 import time

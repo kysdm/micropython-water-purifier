@@ -294,6 +294,12 @@ stateDiagram-v2
 
 ---
 
+## 开源许可
+
+Copyright (C) 2025-2026 kysdm
+
+本项目（`micropython-water-purifier`）基于 **GNU GPL v3** 协议开源（见 [LICENSE](LICENSE)）：可自由使用、修改、分发，但衍生作品必须同样以 GPL v3（或兼容协议）开源。项目第三方组件许可如下：
+
 ## 第三方组件与许可
 
 | 组件 | 来源 | 许可 | 说明 |
@@ -301,4 +307,5 @@ stateDiagram-v2
 | [lib/threadsafe](lib/threadsafe/) | [peterhinch/micropython-async](https://github.com/peterhinch/micropython-async)（`v3/threadsafe/`） | MIT | Peter Hinch 的线程安全原语（队列/事件/消息/Context），用于双核并行调度；`context.py` 有本地小改动（异常捕获与重抛），详见 [lib/threadsafe/README.md](lib/threadsafe/README.md) |
 | [ssd1306.py](ssd1306.py) | MicroPython 官方驱动 | MIT | SSD1306 OLED 标准驱动 |
 | [st7735.py](st7735.py) | 开源 MIT 驱动整理 | MIT | ST7735S TFT 驱动（1.8 寸 128×160，RGB565，SPI） |
-| [font.py](font.py) | 项目自有点阵字库 | 本项目 | 中文/ASCII 点阵数据，随固件分发 |
+| [ws2812b.py](ws2812b.py) | 参考 [MicroPython NeoPixel 教程](https://dmccreary.github.io/micropython/basics/05-neopixel/) 实现 | — | WS2812B RGB LED 驱动（约 20 行简单封装） |
+| [font.py](font.py) | 项目自有点阵字库（[PCtoLCD2002](http://www.pctolcd2002.com/) 生成） | 本项目 | 中文/ASCII 点阵数据，随固件分发 |
