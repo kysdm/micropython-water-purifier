@@ -45,7 +45,7 @@ def connect_wifi_sync():
 
 
 async def connect_wifi():
-    await threadsafe_context.internal_hardware.assign(connect_wifi_sync)
+    return await threadsafe_context.network_hardware.assign(connect_wifi_sync)
 
 
 # 监控 Wi-Fi 连接状态

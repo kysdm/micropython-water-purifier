@@ -53,9 +53,9 @@ def sync_time_sync():
     print_log("达到最大重试次数，放弃同步时间")
 
 
-# 异步同步时间
+# 异步同步时间（返回 sync_time_sync 的结果："ok" / None）
 async def sync_time():
-    await threadsafe_context.internal_hardware.assign(sync_time_sync)
+    return await threadsafe_context.network_hardware.assign(sync_time_sync)
 
 
 # 定时同步时间

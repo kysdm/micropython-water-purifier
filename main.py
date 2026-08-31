@@ -32,18 +32,19 @@ async def main():
         asyncio.create_task(time_utils.periodic_time_backup())  # 每小时备份时间到 flash，供断电恢复
 
         # 连接WiFi（等待界面显示待连接的 WiFi 名称；framebuf 8x8 字体不支持中文，非 ASCII 转 ? 显示）
+        # 异步版：阻塞等待在 network_hardware 线程执行，不卡 asyncio 事件循环
         screen_ui.display_text("wifi connection", 3, 30)
         ssid = str(config.get_config_value("wifi_ssid"))
         ssid_display = "".join(ch if ord(ch) < 128 else "?" for ch in ssid)
         screen_ui.display_text("SSID: " + ssid_display, 3, 46)
-        wifi_connected = wifi.connect_wifi_sync()
+        wifi_connected = await wifi.connect_wifi()
         # 同步NTP时间（仅WiFi已连接时尝试；未连接则跳过，由定时任务在连网后重试）
         screen_ui.display_fill()  # 清空屏幕
         if wifi_connected:
             screen_ui.display_text("ntp time sync", 3, 30)
             time_synced = False
             for _ in range(NTP_SYNC_ATTEMPTS):
-                if ntp.sync_time_sync() == "ok":
+                if await ntp.sync_time() == "ok":
                     time_synced = True
                     break
                 await asyncio.sleep(10)
