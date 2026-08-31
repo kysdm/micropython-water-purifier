@@ -1,5 +1,6 @@
 import asyncio
 import time
+import framebuf
 
 import log
 import font
@@ -85,6 +86,13 @@ def display_show():
 
 
 def draw_chinese(ch_str, x_axis, y_axis, color=1):
+    """
+    绘制 16×16 中文字符（缓存 + blit；左右半字模合并为 16 位列）。
+    :param ch_str: 中文字符串
+    :param x_axis: 起始 x 坐标
+    :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
+    """
     if not _ensure_display():
         return
     offset_ = 0
@@ -102,22 +110,20 @@ def draw_chinese(ch_str, x_axis, y_axis, color=1):
             code |= data_code[1]
 
         byte_data = font.byte2[code]
-        for y in range(0, 16):
-            a_ = bin(byte_data[y]).replace("0b", "")
-            while len(a_) < 8:
-                a_ = "0" + a_
-
-            b_ = bin(byte_data[y + 16]).replace("0b", "")
-            while len(b_) < 8:
-                b_ = "0" + b_
-            for x in range(0, 8):
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 文字的上半部分
-                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, color if int(b_[x]) else 0)  # 文字的下半部分
-
+        # 字模：前 16 行左半 8 列 + 后 16 行右半 8 列 → 合并为 16 位行
+        rows = [(byte_data[y] << 8) | byte_data[y + 16] for y in range(16)]
+        _draw_char(rows, 16, 16, x_axis + offset_, y_axis, color)
         offset_ += 16
 
 
 def draw_chinese_small(ch_str, x_axis, y_axis, color=1):
+    """
+    绘制 12×12 中文字符（缓存 + blit；左右半字模合并为 16 位列，相邻字符偏移 12px）。
+    :param ch_str: 中文字符串
+    :param x_axis: 起始 x 坐标
+    :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
+    """
     if not _ensure_display():
         return
     offset_ = 0
@@ -129,25 +135,15 @@ def draw_chinese_small(ch_str, x_axis, y_axis, color=1):
         code |= data_code[2]
         byte_data = font.byte2[code]  # 获取12x12点阵数据
 
-        for y in range(0, 12):  # 调整为12行
-            a_ = bin(byte_data[y]).replace("0b", "")
-            while len(a_) < 8:
-                a_ = "0" + a_
-
-            b_ = bin(byte_data[y + 12]).replace("0b", "")  # 每行2字节
-            while len(b_) < 8:
-                b_ = "0" + b_
-
-            for x in range(0, 8):
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 文字的左半部分
-                display.pixel(x_axis + x + offset_ + 8 + _shift_x, y + y_axis + _shift_y, color if int(b_[x]) else 0)  # 文字的右半部分
-
+        # 字模：前 12 行左半 8 列 + 后 12 行右半 8 列 → 合并为 16 位行
+        rows = [(byte_data[y] << 8) | byte_data[y + 12] for y in range(12)]
+        _draw_char(rows, 16, 12, x_axis + offset_, y_axis, color)
         offset_ += 12  # 调整水平偏移量为12
 
 
 def draw_english(text, x_axis, y_axis, color=1):
     """
-    绘制英文字符。
+    绘制 8×16 英文字符（缓存 + blit）。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
@@ -159,22 +155,63 @@ def draw_english(text, x_axis, y_axis, color=1):
     for char in text:
         ascii_code = ord(char)  # 获取字符的 ASCII 编码
         byte_data = font.byte2.get(ascii_code, [0] * 16)  # 获取字符点阵数据（8x16 位图）
-
-        # 绘制每一行的像素
-        for y in range(0, 16):  # 高度 16 行
-            a_ = bin(byte_data[y]).replace("0b", "")  # 将字节转换为二进制
-            while len(a_) < 8:  # 手动补齐至 8 位
-                a_ = "0" + a_
-
-            for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 绘制上半部分的像素
-
+        _draw_char(byte_data, 8, 16, x_axis + offset_, y_axis, color)
         offset_ += 8  # 每个字符宽度为 8 像素
+
+
+# ---- 字符 framebuffer 缓存（blit 整块拷贝替代逐像素绘制，绘制阶段提速）----
+# key = (宽, 高, 字模数据, 颜色, 屏幕类型) → FrameBuffer；构建一次后反复使用
+_char_fb_cache = {}
+_CHAR_FB_CACHE_LIMIT = 400  # 缓存条目上限，超出后整体清空重建（防内存无限膨胀）
+
+
+def _build_char_fb(byte_data, w, h, color):
+    """把字模点阵构建成 framebuffer（TFT RGB565 / OLED 单色，背景黑色与逐像素绘制一致）"""
+    if screen.get_type() == "tft":
+        buf = bytearray(w * h * 2)
+        fb = framebuf.FrameBuffer(buf, w, h, framebuf.RGB565)
+        # color=1 表示默认前景白（与逐像素版 _tft_color 映射一致），其余为具体 RGB565 值
+        fg = 0xFFFF if color == 1 else color
+        for y in range(h):
+            row = byte_data[y]
+            for x in range(w):
+                fb.pixel(x, y, fg if (row >> (w - 1 - x)) & 1 else 0x0000)
+    else:
+        # v1.29 固件的 framebuf 对 MONO_VLSB buffer 有额外大小要求（如 8×12 需 ≥16 字节），
+        # 加 8 字节余量兼容（OLED 屏幕小，额外内存可忽略）
+        buf = bytearray(w * h // 8 + 8)
+        fb = framebuf.FrameBuffer(buf, w, h, framebuf.MONO_VLSB)
+        for y in range(h):
+            row = byte_data[y]
+            for x in range(w):
+                if (row >> (w - 1 - x)) & 1:
+                    fb.pixel(x, y, 1)
+    return fb
+
+
+def _get_char_fb(byte_data, w, h, color):
+    """获取（或构建）字符 framebuffer"""
+    key = (w, h, tuple(byte_data), color, screen.get_type())
+    fb = _char_fb_cache.get(key)
+    if fb is None:
+        if len(_char_fb_cache) >= _CHAR_FB_CACHE_LIMIT:
+            _char_fb_cache.clear()  # 极端情况下降级重建
+        fb = _build_char_fb(byte_data, w, h, color)
+        _char_fb_cache[key] = fb
+    return fb
+
+
+def _draw_char(byte_data, w, h, x_axis, y_axis, color=1):
+    """blit 绘制单个字符（行数据高位在前；x/y 自动叠加防烧屏偏移）"""
+    if not _ensure_display():
+        return
+    fb = _get_char_fb(byte_data, w, h, color)
+    display.blit(fb, x_axis + _shift_x, y_axis + _shift_y)
 
 
 def draw_english_small(text, x_axis, y_axis, color=1):
     """
-    绘制英文字符。
+    绘制 8×12 小字号英文字符（缓存 + blit；缺字回退大字号前 12 行）。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
@@ -191,30 +228,20 @@ def draw_english_small(text, x_axis, y_axis, color=1):
             # 小字号缺字时回退：取 16px 大字号字模的前 12 行
             big = font.byte2.get(code)
             byte_data = big[:12] if big else [0] * 12
-
-        # 绘制每一行的像素
-        for y in range(0, 12):  # 高度 12 行
-            a_ = bin(byte_data[y]).replace("0b", "")  # 将字节转换为二进制
-            while len(a_) < 8:  # 手动补齐至 8 位
-                a_ = "0" + a_
-
-            for x in range(0, 8):  # 宽度 8 列
-                display.pixel(x_axis + x + offset_ + _shift_x, y + y_axis + _shift_y, color if int(a_[x]) else 0)  # 绘制上半部分的像素
-
+        _draw_char(byte_data, 8, 12, x_axis + offset_, y_axis, color)
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
 def draw_vertical_line(x, y_start, y_end, color=1):
     """
-    绘制一条竖线。
+    绘制一条竖线（framebuf.vline C 加速）。
     :param x: 竖线的 X 坐标
     :param y_start: 竖线的起始 Y 坐标
     :param y_end: 竖线的结束 Y 坐标
     """
     if not _ensure_display():
         return
-    for y in range(y_start, y_end):
-        display.pixel(x + _shift_x, y + _shift_y, color)  # 设定竖线上的每个像素为亮
+    display.vline(x + _shift_x, y_start + _shift_y, y_end - y_start, color)  # C 实现整段绘制
 
 
 def _layout():
@@ -304,7 +331,7 @@ async def display_cartridge_pp_usage_time(var):
         draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][0])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_cartridge_pp_usage_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_cartridge_pp_usage_time_sync, var=var)
 
 
 async def display_cartridge_udf_usage_time(var):
@@ -315,7 +342,7 @@ async def display_cartridge_udf_usage_time(var):
         draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][1])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_cartridge_udf_usage_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_cartridge_udf_usage_time_sync, var=var)
 
 
 async def display_cartridge_cto_usage_time(var):
@@ -326,7 +353,7 @@ async def display_cartridge_cto_usage_time(var):
         draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][2])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_cartridge_cto_usage_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_cartridge_cto_usage_time_sync, var=var)
 
 
 async def display_cartridge_ro_usage_time(var):
@@ -337,7 +364,7 @@ async def display_cartridge_ro_usage_time(var):
         draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][3])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_cartridge_ro_usage_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_cartridge_ro_usage_time_sync, var=var)
 
 
 async def display_cartridge_t33_usage_time(var):
@@ -348,7 +375,7 @@ async def display_cartridge_t33_usage_time(var):
         draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][4])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_cartridge_t33_usage_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_cartridge_t33_usage_time_sync, var=var)
 
 
 async def display_pure_water_tds_value(var):
@@ -360,7 +387,7 @@ async def display_pure_water_tds_value(var):
         draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][0])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_pure_water_tds_value_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_pure_water_tds_value_sync, var=var)
 
 
 async def display_of_wastewater_tds_value(var):
@@ -372,7 +399,7 @@ async def display_of_wastewater_tds_value(var):
         draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][1])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_of_wastewater_tds_value_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_of_wastewater_tds_value_sync, var=var)
 
 
 async def display_water_temperature(var):
@@ -383,7 +410,7 @@ async def display_water_temperature(var):
         draw_english_small(f"{var:2}", 99, _layout()["right_val_y"][2])
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_water_temperature_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_water_temperature_sync, var=var)
 
 
 async def display_countdown_time(var):
@@ -407,7 +434,7 @@ async def display_countdown_time(var):
         draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_countdown_time_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_countdown_time_sync, var=var)
 
 
 async def display_status(var):
@@ -433,7 +460,7 @@ async def display_status(var):
         draw_chinese_small(var, 99, _layout()["right_val_y"][3], color=STATUS_COLORS.get(var, 0xFFFF))
         display_show()
 
-    await threadsafe_context.external_hardware.assign(display_status_sync, var=var)
+    await threadsafe_context.display_hardware.assign(display_status_sync, var=var)
 
 
 def _draw_value(key, var):
@@ -583,7 +610,7 @@ async def orbit_task():
             idx = (idx + 1) % len(ORBIT_POSITIONS)
             _shift_x, _shift_y = ORBIT_POSITIONS[idx]
             if _screen_powered:
-                await threadsafe_context.external_hardware.assign(redraw_all)
+                await threadsafe_context.display_hardware.assign(redraw_all)
         except Exception as e:
             log.print_log(f"像素偏移任务错误: {e}")
 
@@ -596,10 +623,10 @@ async def auto_off_task():
             keep_on = _screen_wake or time.ticks_diff(now, _screen_grace_until) < 0
             if keep_on and not _screen_powered:
                 # 走工作线程串行操作屏幕总线，避免与显示任务并发导致死机
-                await threadsafe_context.external_hardware.assign(power_on)
+                await threadsafe_context.display_hardware.assign(power_on)
                 log.print_log("屏幕已点亮（运行状态）")
             elif not keep_on and _screen_powered:
-                await threadsafe_context.external_hardware.assign(power_off)
+                await threadsafe_context.display_hardware.assign(power_off)
                 log.print_log("空闲超时，自动熄屏（防烧屏）")
         except Exception as e:
             log.print_log(f"自动熄屏任务错误: {e}")
@@ -611,7 +638,7 @@ async def refresh_bottom_bar():
     while True:
         try:
             if screen.get_type() == "tft" and _screen_powered:
-                await threadsafe_context.external_hardware.assign(_draw_bottom_bar_sync)
+                await threadsafe_context.display_hardware.assign(_draw_bottom_bar_sync)
         except Exception as e:
             log.print_log(f"底部信息栏刷新失败: {e}")
         await asyncio.sleep(30)

@@ -1,6 +1,6 @@
 # screen.py — 屏幕抽象层：按 config 选择 SSD1306 OLED 或 ST7735 TFT
 #
-# 对外统一接口：pixel / fill / hline / vline / text / show / contrast /
+# 对外统一接口：pixel / fill / hline / vline / text / blit / show / contrast /
 #               poweroff / poweron / reinit
 # 单色绘制值 1/0 自动映射为前景白 / 背景黑（TFT RGB565 用 0xFFFF / 0x0000）。
 
@@ -77,6 +77,9 @@ class OLEDScreen:
     def text(self, s, x, y, c=1):
         self.dev.text(s, x, y, c)
 
+    def blit(self, fbuf, x, y, key=-1):
+        self.dev.blit(fbuf, x, y, key)
+
     def show(self):
         self.dev.show()
 
@@ -130,6 +133,9 @@ class TFTScreen:
 
     def text(self, s, x, y, c=1):
         self.dev.text(s, x, y, _tft_color(c))
+
+    def blit(self, fbuf, x, y, key=-1):
+        self.dev.blit(fbuf, x, y, key)
 
     def show(self):
         self.dev.show()
