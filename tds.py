@@ -67,20 +67,33 @@ def parse_frame(frame):
 # 发送命令并读取响应
 def send_command(command, channel=0x01, data=None):
     frame = build_frame(command, channel, data)
-    # log.print_log_sync(f"发送帧: {[hex(b) for b in frame]} 长度: {len(frame)}")
+
+    # 发送前清空接收缓冲（防止上次残留数据污染本次解析）
+    while uart.any():
+        uart.read()
+
     uart.write(frame)
 
-    time.sleep(0.5)  # 等待响应
+    # 循环等待响应（最长 1 秒，覆盖传感器偶发慢响应；原固定 0.5 秒等待容易误判无响应）
+    deadline = time.ticks_add(time.ticks_ms(), 1000)
+    while not uart.any() and time.ticks_diff(deadline, time.ticks_ms()) > 0:
+        time.sleep_ms(10)
 
     if uart.any():
-        response = uart.read()
-        # log.print_log_sync(f"接收帧: {[hex(b) for b in response]} 长度: {len(response)}")
-        parsed, error = parse_frame(response)
-        # if error:
-        #     log.print_log_sync(f"解析错误:, {error}")
-        # else:
-        #     log.print_log_sync(f"解析结果:, {parsed}")
-        return parsed
+        # 累积读取直到帧完整（容忍分片到达，9600bps 下字节可能还在传输中），最多再等 200ms
+        response = b""
+        parse_deadline = time.ticks_add(time.ticks_ms(), 200)
+        while time.ticks_diff(parse_deadline, time.ticks_ms()) > 0:
+            if uart.any():
+                response += uart.read()
+                parsed, error = parse_frame(response)
+                if parsed is not None:
+                    return parsed
+            else:
+                time.sleep_ms(5)
+        if _should_log_error():
+            log.print_log(f"TDS 解析错误: {error}")
+        return None
     else:
         if _should_log_error():
             log.print_log("未收到TDS传感器响应")
@@ -135,4 +148,4 @@ def get_recent_pure_tds(max_age_ms=RECENT_TDS_MAX_AGE_MS):
 
 
 async def get_tds_and_temperature():
-    return await threadsafe_context.external_hardware.assign(get_tds_and_temperature_sync)
+    return await threadsafe_context.tds_hardware.assign(get_tds_and_temperature_sync)
