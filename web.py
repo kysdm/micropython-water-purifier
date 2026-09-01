@@ -137,6 +137,38 @@ def get_filter_install_date(timestamp):
         return "未知"
 
 
+# 获取系统信息：CPU 型号、ROM（flash 文件系统）总量与可用、RAM 总量与可用
+def get_system_info():
+    info = {"cpu": "未知", "rom_total": 0, "rom_free": 0, "ram_total": 0, "ram_free": 0}
+    try:
+        import os
+
+        machine = os.uname().machine
+        info["cpu"] = machine.split(" with ", 1)[1] if " with " in machine else machine
+        v = os.statvfs("/")
+        info["rom_total"] = v[0] * v[2]  # 块大小 × 总块数
+        info["rom_free"] = v[0] * v[4]  # 块大小 × 可用块数
+    except Exception:
+        pass
+    try:
+        import esp32
+
+        heaps = esp32.idf_heap_info(0)  # 所有堆（含 PSRAM）
+        info["ram_total"] = sum(h[0] for h in heaps)
+        info["ram_free"] = sum(h[1] for h in heaps)
+    except Exception:
+        import gc
+
+        gc.collect()
+        info["ram_total"] = gc.mem_alloc() + gc.mem_free()
+        info["ram_free"] = gc.mem_free()
+    return info
+
+
+def _format_mb(bytes_value):
+    return "{:.1f} MB".format(bytes_value / 1024 / 1024)
+
+
 # 获取倒计时时间（单位：分钟）
 def get_countdown_time():
     """
@@ -534,6 +566,8 @@ async def handle_request(reader, writer):
                 html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                 html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
                 html += "<h1>系统配置</h1>"
+                sys_info = get_system_info()
+                html += f"<p>CPU: {sys_info['cpu']} | ROM: {_format_mb(sys_info['rom_free'])} / {_format_mb(sys_info['rom_total'])} | RAM: {_format_mb(sys_info['ram_free'])} / {_format_mb(sys_info['ram_total'])}</p>"
                 html += "<h2>屏幕类型（硬件上只接一块屏，重启生效）</h2>"
                 html += f"<p>当前屏幕类型: {config.get_display_type() or '（未配置，使用默认）'}</p>"
                 html += "<form method='POST' action='/system'>"
