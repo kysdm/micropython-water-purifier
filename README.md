@@ -288,7 +288,10 @@ stateDiagram-v2
 ### 设备端（Web 页面）
 
 1. 浏览器打开 `http://<设备IP>/ota`（需登录）；
-2. 填写**更新源 URL**：`https://raw.githubusercontent.com/kysdm/micropython-water-purifier/master/` 并保存；
+2. 填写**更新源 URL** 并保存（国内网络推荐使用加速地址）：
+   - GitHub 直连：`https://raw.githubusercontent.com/kysdm/micropython-water-purifier/master/`
+   - 国内加速（ghfast.top 代理）：`https://ghfast.top/https://raw.githubusercontent.com/kysdm/micropython-water-purifier/master/`
+   - 国内加速（jsDelivr CDN）：`https://cdn.jsdelivr.net/gh/kysdm/micropython-water-purifier@master/`
 3. 点**检查更新**：显示当前版本与远端版本；
 4. 有新版本时点**升级**：设备逐个下载文件（临时文件 + SHA-256 校验）→ 覆盖（不会自动重启）；
 5. 状态变为“升级完成”后点**重启设备**，重启后 `/ota` 页面显示新版本号。
