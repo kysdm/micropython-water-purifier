@@ -10,10 +10,31 @@ import config
 import pins
 
 # ---- 屏幕选择（硬件上只接一块屏）----
-# 优先读 config.json 的 display_type（Web /status 页面可配置，OTA 升级不会覆盖），
-# 未配置时回退到下面的默认值（原烧录前常量）
+# 优先级：config.json 的 display_type（Web /system 页面可配置，OTA 升级不会覆盖）
+#         > 自动检测（I2C 扫描 OLED 地址 0x3C/0x3D，检测到则 oled，否则 tft）
+#         > 默认值（检测失败时回退）
 _DEFAULT_DISPLAY_TYPE = "tft"  # "oled" = SSD1306 I2C；"tft" = ST7735 SPI（1.8 寸 128×160）
-DISPLAY_TYPE = config.get_display_type() or _DEFAULT_DISPLAY_TYPE
+
+
+def _detect_display_type():
+    """自动检测屏幕类型：I2C 扫描 OLED 地址（0x3C/0x3D），检测到则 oled，否则 tft。
+    检测失败（引脚异常等）回退默认值；config 显式配置优先于检测结果。"""
+    try:
+        from machine import Pin, SoftI2C
+
+        i2c = SoftI2C(sda=Pin(pins.OLED_PINS["sda"]), scl=Pin(pins.OLED_PINS["scl"]))
+        try:
+            addrs = i2c.scan()
+        finally:
+            i2c.deinit()
+        if 0x3C in addrs or 0x3D in addrs:
+            return "oled"
+        return "tft"
+    except Exception:
+        return _DEFAULT_DISPLAY_TYPE
+
+
+DISPLAY_TYPE = config.get_display_type() or _detect_display_type()
 # 屏幕引脚定义统一在 pins.py（OLED_PINS / TFT_PINS）
 TFT_X_OFFSET = 0  # 部分 1.8 寸模块显示左移/上移时需要 1~2 像素偏移
 TFT_Y_OFFSET = 0
