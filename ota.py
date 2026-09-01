@@ -4,7 +4,8 @@
 #   <base_url>/manifest.json   {"version": "...", "files": [{"path": "water.py", "sha256": "..."}]}
 #   <base_url>/<path>          各代码文件
 #
-# 流程：检查版本 → 下载清单 → 逐个下载（临时文件 + SHA-256 校验）→ 覆盖 → 写本地版本 → 手动重启。
+# 流程：检查版本 → 下载清单 → 全部下载到临时文件并校验（任一失败即回滚，正式文件保持旧版）
+#       → 全部通过后统一覆盖（rename 毫秒级，避免半更新状态）→ 写本地版本 → 手动重启。
 # 下载在 network_hardware 线程执行，不阻塞主事件循环。
 
 import hashlib
@@ -97,8 +98,9 @@ def _local_sha256(path):
         return None
 
 
-def _download_verify_overwrite(base_url, path, sha256):
-    """分块下载 + SHA-256 校验 + 覆盖文件；返回错误消息（None=成功）"""
+def _download_verify(base_url, path, sha256):
+    """分块下载到临时文件 + SHA-256 校验（不覆盖正式文件）。
+    成功返回 None；失败删除临时文件并返回错误消息"""
     tmp = path + OTA_TMP_SUFFIX
     h = hashlib.sha256()
     try:
@@ -125,8 +127,16 @@ def _download_verify_overwrite(base_url, path, sha256):
         except OSError:
             pass
         return f"{path} 校验失败（哈希不符）"
-    os.rename(tmp, path)  # 覆盖原文件（先完整下载校验，失败不影响旧文件）
     return None
+
+
+def _cleanup_tmp_files(paths):
+    """删除临时文件（整体替换前的下载/校验失败时回滚用，正式文件保持旧版）"""
+    for path in paths:
+        try:
+            os.remove(path + OTA_TMP_SUFFIX)
+        except OSError:
+            pass
 
 
 def ota_sync():
@@ -165,11 +175,13 @@ def ota_sync():
         return "清单中没有文件"
 
     total = len(files)
+    pending = []  # 待替换文件（已下载并校验通过）
     for i, entry in enumerate(files):
         path = entry.get("path", "") if isinstance(entry, dict) else ""
         sha = entry.get("sha256", "") if isinstance(entry, dict) else ""
         # 安全校验：只允许 .py 文件，拒绝路径穿越（.. / 反斜杠）
         if ".." in path or "\\" in path or not path.endswith(_OTA_FILE_EXTS):
+            _cleanup_tmp_files(pending)
             _set_status("error", f"非法文件路径: {path}", "")
             _append_history(f"非法文件路径: {path}")
             return f"非法文件路径: {path}"
@@ -178,13 +190,28 @@ def ota_sync():
             _set_status("downloading", f"{path} 已是最新，跳过", f"{i + 1}/{total}")
             _append_history(f"{path} 已是最新，跳过")
             continue
+        # 阶段 1：只下载到临时文件并校验，不覆盖正式文件
         _set_status("downloading", f"下载 {path}...", f"{i + 1}/{total}")
         _append_history(f"下载 {path}...")
-        err = _download_verify_overwrite(base_url, path, sha)
+        err = _download_verify(base_url, path, sha)
         if err:
+            _cleanup_tmp_files(pending)  # 回滚：删除已下载的临时文件，正式文件全部保持旧版
             _set_status("error", err, f"{i + 1}/{total}")
             _append_history(f"{path} 失败: {err}")
             return err
+        pending.append(path)
+
+    # 阶段 2：全部下载校验通过后统一替换（rename 原子覆盖，毫秒级，
+    # 避免逐个替换时依赖文件被部分更新导致无法启动）
+    if pending:
+        _append_history(f"全部下载校验完成（{len(pending)} 个变更文件），开始替换...")
+        for path in pending:
+            try:
+                os.rename(path + OTA_TMP_SUFFIX, path)
+            except OSError as e:
+                _set_status("error", f"替换 {path} 失败: {e}", "")
+                _append_history(f"替换 {path} 失败: {e}")
+                return f"替换 {path} 失败: {e}"
 
     _save_local_version(version)
     log.print_log(f"OTA 升级完成，当前版本 {version}，等待用户重启")
