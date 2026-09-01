@@ -42,50 +42,56 @@ async def start_water_production():
     global filling_bucket
 
     while True:
-        watchdog.feed()  # 喂狗
-        low_pressure = pins.low_pressure_switch.value()  # 1 表示压力不足
-        high_pressure = pins.high_pressure_switch.value()  # 0 表示压力未达标
+        try:
+            watchdog.feed()  # 喂狗
+            low_pressure = pins.low_pressure_switch.value()  # 1 表示压力不足
+            high_pressure = pins.high_pressure_switch.value()  # 0 表示压力未达标
 
-        if low_pressure == 1:
-            # 缺水状态：停止制水（含停止注水），并等待进水恢复
-            if water_running:
+            if low_pressure == 1:
+                # 缺水状态：停止制水（含停止注水），并等待进水恢复
+                if water_running:
+                    await stop_water_actions()
+                    water_running = False
+                filling_bucket = False
+                log.print_log("缺水，停止制水.")
+                forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
+                await waiting_for_water_intake_to_recover()  # 等待进水恢复
+                await screen_ui.display_status("空闲")
+                log.print_log("进水压力达标，可以开始制水。")
+
+            elif high_pressure == 0 and not water_running:
+                # 水龙头打开：开始制水（桶阀初始关闭，制水循环中按 TDS 决定是否注水）
+                forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
+                filling_bucket = False
+                await start_water_actions()
+                water_running = True
+
+            elif high_pressure == 1 and water_running:
+                # 水龙头关闭：停止制水（含停止注水），进入强制冲洗 + 纯水泡膜流程
                 await stop_water_actions()
                 water_running = False
-            filling_bucket = False
-            log.print_log("缺水，停止制水.")
-            forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
-            await waiting_for_water_intake_to_recover()  # 等待进水恢复
-            await screen_ui.display_status("空闲")
-            log.print_log("进水压力达标，可以开始制水。")
+                filling_bucket = False
+                forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
+                asyncio.create_task(countdown.start(pure_water_reflow_ro))
+                log.print_log("水龙头关闭，停止制水.")
 
-        elif high_pressure == 0 and not water_running:
-            # 水龙头打开：开始制水（桶阀初始关闭，制水循环中按 TDS 决定是否注水）
-            forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
-            filling_bucket = False
-            await start_water_actions()
-            water_running = True
+            elif water_running:
+                # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水（带防抖）
+                tds_ok = fill_tds_ok()
+                if tds_ok is not None and tds_ok != filling_bucket:
+                    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
+                    filling_bucket = tds_ok
+                    if tds_ok:
+                        log.print_log("纯水TDS达标，开始向压力桶注水.")
+                    else:
+                        log.print_log("纯水TDS不达标或不可信，停止向压力桶注水.")
 
-        elif high_pressure == 1 and water_running:
-            # 水龙头关闭：停止制水（含停止注水），进入强制冲洗 + 纯水泡膜流程
-            await stop_water_actions()
-            water_running = False
-            filling_bucket = False
-            forced_flush_ro_task = asyncio.create_task(forced_flush_ro())  # 大流量强制冲洗RO膜
-            asyncio.create_task(countdown.start(pure_water_reflow_ro))
-            log.print_log("水龙头关闭，停止制水.")
-
-        elif water_running:
-            # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水（带防抖）
-            tds_ok = fill_tds_ok()
-            if tds_ok is not None and tds_ok != filling_bucket:
-                pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
-                filling_bucket = tds_ok
-                if tds_ok:
-                    log.print_log("纯水TDS达标，开始向压力桶注水.")
-                else:
-                    log.print_log("纯水TDS不达标或不可信，停止向压力桶注水.")
-
-        await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            # 异常保护：制水主循环崩溃会导致喂狗中断（新固件 WDT 生效后直接复位），
+            # 记录日志并继续运行
+            log.print_log(f"制水主循环异常: {e}")
+            await asyncio.sleep(1)
 
 
 async def start_water_actions():

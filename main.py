@@ -8,6 +8,7 @@ import ntp
 import web
 import config
 import time_utils
+import watchdog
 
 
 NTP_SYNC_ATTEMPTS = 2  # 开机 NTP 同步尝试次数；失败后以本地保存的近似时间继续启动
@@ -27,6 +28,7 @@ async def main():
         else:
             log.print_log("无已保存时间或 RTC 仍有效，等待 NTP 同步")
         log.print_log("程序启动")
+        watchdog.start_feed_task()  # 独立喂狗任务：启动即开始，防止 WDT 超时复位
         asyncio.create_task(log.check_and_rotate_log())  # 启动日志轮换任务
         asyncio.create_task(log.flush_logs_to_flash())  # 启动每分钟写入闪存的任务
         asyncio.create_task(time_utils.periodic_time_backup())  # 每小时备份时间到 flash，供断电恢复
