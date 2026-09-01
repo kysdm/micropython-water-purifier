@@ -269,6 +269,7 @@ async def handle_request(reader, writer):
             html += "<li><a href='/logs'>日志页面</a></li>"
             html += "<li><a href='/status'>滤芯状态页面</a></li>"
             html += "<li><a href='/wifi'>WIFI页面</a></li>"
+            html += "<li><a href='/system'>系统配置</a></li>"
             html += "<li><a href='/ota'>OTA升级</a></li>"
             html += "</ul>"
             html += "</body></html>"
@@ -506,6 +507,74 @@ async def handle_request(reader, writer):
                 else:
                     response = "HTTP/1.1 404 Not Found\r\nContent-Type: text/html\r\n\r\n<h1>not found</h1>"
                     await writer.awrite(response.encode("utf-8"))
+
+        elif path == "/system":
+            if method == "GET":
+                html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                html += "<h1>系统配置</h1>"
+                html += "<h2>屏幕类型（硬件上只接一块屏，重启生效）</h2>"
+                html += f"<p>当前屏幕类型: {config.get_display_type() or '（未配置，使用默认）'}</p>"
+                html += "<form method='POST' action='/system'>"
+                html += "<input type='hidden' name='action' value='update_display_type'>"
+                html += "<select name='new_display_type'>"
+                html += "<option value='oled'>OLED（SSD1306）</option>"
+                html += "<option value='tft'>TFT（ST7735）</option>"
+                html += "</select>"
+                html += "<input type='submit' value='保存'></form>"
+                html += "<h2>系统操作</h2>"
+                html += "<form method='POST' action='/system' onsubmit=\"return confirm('确定重启设备吗？');\">"
+                html += "<input type='hidden' name='action' value='reboot'>"
+                html += "<input type='submit' value='重启系统'></form>"
+                html += "<br><a href='/'>返回主菜单</a>"
+                html += "</body></html>"
+                await writer.awrite(html.encode("utf-8"))
+
+            elif method == "POST":
+                post_body = ""
+                if "\r\n\r\n" in request:
+                    post_body = request.split("\r\n\r\n", 1)[1]
+                params = {}
+                for pair in post_body.split("&"):
+                    if "=" in pair:
+                        key, value = pair.split("=", 1)
+                        params[key] = url_decode(value)
+
+                action = params.get("action", "")
+                if action == "update_display_type":
+                    new_display_type = params.get("new_display_type", "")
+                    if new_display_type in ("oled", "tft"):
+                        config.set_display_type(new_display_type)
+                        log.print_log(f"WEB 设置屏幕类型: {new_display_type}（重启后生效）")
+                    html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                    html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                    html += "<h1>屏幕类型已保存</h1><p>重启设备后生效。</p>"
+                elif action == "reboot":
+                    # 先完整响应浏览器（带 Content-Length，浏览器无需等连接关闭即可完成渲染，
+                    # 避免设备 reset 导致连接中断后页面一直转圈）；
+                    # 页面 20 秒后自动 GET 回 /system（设备重启+WiFi 重连需要时间）
+                    body = ("<html><head><meta charset='utf-8'>"
+                            "<meta http-equiv='refresh' content='20; url=/system'>"
+                            "</head><body><h1>设备重启中...</h1>"
+                            "<p>设备正在重启，约 20 秒后自动返回系统配置页面。</p>"
+                            "<p>请勿刷新本页面（会重复发送重启命令）；"
+                            "若未自动跳转，请稍后手动访问 <a href='/system'>系统配置</a>。</p>"
+                            "</body></html>").encode("utf-8")
+                    await writer.awrite(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + str(len(body)).encode("utf-8") + b"\r\n\r\n" + body)
+                    await writer.drain()
+                    log.print_log("用户触发系统重启")
+                    await asyncio.sleep(0.5)
+                    import machine
+
+                    machine.reset()
+                    return
+                else:
+                    html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                    html += "<h1>未知操作</h1>"
+                html += "<a href='/system'>返回系统配置</a><br>"
+                html += "<a href='/'>返回主菜单</a>"
+                html += "</body></html>"
+                await writer.awrite(html.encode("utf-8"))
 
         elif path == "/ota":
             if method == "GET":

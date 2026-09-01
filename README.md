@@ -8,7 +8,7 @@
 - RO 膜强制冲洗、开机冲洗
 - 纯水泡膜（洗膜）自动流程（TDS 达标/超时退出）
 - 双通道 TDS / 水温监测（UART 传感器）
-- 屏幕双选（烧录前决定）：0.96 寸 SSD1306 OLED（I2C）或 1.8 寸 ST7735 TFT（SPI，128×160）
+- 屏幕双选（Web 系统配置页面（/system）配置，存于 config.json，不受 OTA 升级影响）：0.96 寸 SSD1306 OLED（I2C）或 1.8 寸 ST7735 TFT（SPI，128×160）
 - 防烧屏：像素偏移（仅 OLED）+ 空闲自动熄屏 + 亮度控制
 - 内置 Web 管理服务器（端口 80）：滤芯状态、参数设置、WiFi 配置、日志下载
 - WiFi 自动连接/断线重连，NTP 自动校时
@@ -49,7 +49,7 @@
 | 废水阀 | GPIO10（输出） | |
 | 进水电磁阀 | GPIO13（输出） | |
 | TDS 传感器 | UART1：TX=GPIO17，RX=GPIO18，9600bps | 双通道协议 |
-| OLED（0.96 寸，默认） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [pins.py](pins.py) 的 `OLED_PINS` 配置（默认 SDA=1/SCL=2） |
+| OLED（0.96 寸） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [pins.py](pins.py) 的 `OLED_PINS` 配置（默认 SDA=1/SCL=2）；屏幕类型在 Web 系统配置页面（/system）选择（config.json 的 `display_type`，重启生效） |
 | TFT（可选，1.8 寸） | SPI：SCL(SCLK)/SDA(MOSI)/CS/DC/RST/BLK | ST7735 128×160 全彩；引脚在 [pins.py](pins.py) 的 `TFT_PINS` 配置（默认 7/8/14/15/16/21），坐标偏移 `TFT_X_OFFSET`/`TFT_Y_OFFSET`、颜色顺序 `TFT_BGR` 在 [screen.py](screen.py) 配置，两块屏硬件只接一块 |
 | RGB LED | GPIO48 | WS2812B 单灯 |
 
@@ -242,6 +242,7 @@ stateDiagram-v2
 | `web_password` | admin | 4~32 字符 | Web 管理访问密码（Basic Auth，/wifi 页面可修改） |
 | `tds` | 10 | 5~30 | 纯水泡膜目标废水 TDS（ppm）；与注水TDS互斥：**须 ≥ 注水TDS**，Web 设置时自动钳制 |
 | `fill_tds` | 10 | 1~20 | 压力桶注水纯水 TDS 阈值（ppm），不达标不注水；与洗膜目标TDS互斥：**须 ≤ 洗膜目标TDS**，Web 设置时自动钳制 |
+| `display_type` | （未配置） | oled/tft | 屏幕类型；Web 系统配置页面（/system）选择，**重启生效**；OTA 升级不覆盖该配置 |
 | `countdown_time` | 45 | 1~3600 | 洗膜倒计时时长（秒） |
 | `pure_water_ro_clean_timeout` | 5 | 1~10 | 泡膜最长运行时间（分钟） |
 | `ro_force_clean_time` | 30 | 1~60 | 累计制水达到该分钟数后强制冲洗 RO 膜 |

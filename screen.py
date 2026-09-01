@@ -6,11 +6,15 @@
 
 import time
 
+import config
 import pins
 
-# ---- 屏幕选择（烧录固件前在此决定，硬件上只接一块屏）----
+# ---- 屏幕选择（硬件上只接一块屏）----
+# 优先读 config.json 的 display_type（Web /status 页面可配置，OTA 升级不会覆盖），
+# 未配置时回退到下面的默认值（原烧录前常量）
+_DEFAULT_DISPLAY_TYPE = "tft"  # "oled" = SSD1306 I2C；"tft" = ST7735 SPI（1.8 寸 128×160）
+DISPLAY_TYPE = config.get_display_type() or _DEFAULT_DISPLAY_TYPE
 # 屏幕引脚定义统一在 pins.py（OLED_PINS / TFT_PINS）
-DISPLAY_TYPE = "tft"  # "oled" = SSD1306 I2C；"tft" = ST7735 SPI（1.8 寸 128×160）
 TFT_X_OFFSET = 0  # 部分 1.8 寸模块显示左移/上移时需要 1~2 像素偏移
 TFT_Y_OFFSET = 0
 TFT_BGR = True  # 颜色红蓝互换时改 True（白字界面通常无感，但建议按屏幕实际调）

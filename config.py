@@ -174,6 +174,17 @@ def set_wifi(wifi_ssid, wifi_password):
     update_config("wifi_password", wifi_password)
 
 
+def get_display_type():
+    # 屏幕类型（"oled"/"tft"）；未配置返回 None，由 screen.py 使用默认值
+    value = get_config_value("display_type")
+    return value if value in ("oled", "tft") else None
+
+
+def set_display_type(new_type):
+    if new_type in ("oled", "tft"):
+        update_config("display_type", new_type)
+
+
 def get_ota_url():
     # OTA 更新源基础 URL；空字符串表示未启用
     value = get_config_value("ota_url")
