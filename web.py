@@ -668,6 +668,12 @@ async def handle_request(reader, writer):
                 html += "<h1>OTA 升级</h1>"
                 html += f"<p>当前版本: {ota.get_local_version()}</p>"
                 html += f"<p>状态: {st['state']} - {st['message']} {st['progress']}</p>"
+                history = st.get("history") or []
+                if history:
+                    html += "<h2>本次记录</h2><ul>"
+                    for line in history:
+                        html += f"<li>{line}</li>"
+                    html += "</ul>"
                 html += "<h2>更新源设置</h2>"
                 html += f"<p>更新源: {config.get_ota_url() or '（未配置）'}</p>"
                 html += "<form method='POST' action='/ota'>"

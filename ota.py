@@ -20,8 +20,9 @@ OTA_VERSION_FILE = "ota_version.txt"
 OTA_TMP_SUFFIX = ".ota_tmp"
 _OTA_FILE_EXTS = (".py",)  # 只允许覆盖代码文件，防路径穿越/覆盖任意文件
 
-# 状态记录（供 /ota 页面轮询显示）
-_ota_status = {"state": "idle", "message": "", "progress": ""}
+# 状态记录（供 /ota 页面轮询显示）；history 保留本次操作的逐文件记录（跳过/下载/失败）
+_ota_status = {"state": "idle", "message": "", "progress": "", "history": []}
+_OTA_HISTORY_MAX = 50  # 历史记录条数上限，防止内存无限增长
 
 
 def get_status():
@@ -48,6 +49,14 @@ def _set_status(state, message="", progress=""):
     _ota_status["state"] = state
     _ota_status["message"] = message
     _ota_status["progress"] = progress
+
+
+def _append_history(msg):
+    """追加一条本次操作记录（/ota 页面显示所有记录用），超出上限丢弃最旧记录"""
+    history = _ota_status.setdefault("history", [])
+    history.append(msg)
+    if len(history) > _OTA_HISTORY_MAX:
+        del history[0]
 
 
 def _fetch_text(url, timeout=10):
@@ -131,10 +140,12 @@ def ota_sync():
     if not base_url.endswith("/"):
         base_url += "/"
 
+    _ota_status["history"] = []  # 清空上一次操作记录
     _set_status("checking", "正在检查更新...", "")
     manifest, err = _fetch_manifest(base_url)
     if err:
         _set_status("error", err, "")
+        _append_history(f"获取清单失败: {err}")
         log.print_log(f"OTA 升级失败（获取清单）: {err}")
         return err
     version = manifest.get("version", "")
@@ -142,12 +153,15 @@ def ota_sync():
     local = get_local_version()
     if version == local:
         _set_status("idle", f"已是最新版本（{local}）", "")
+        _append_history(f"已是最新版本（{local}）")
         return f"已是最新版本（{local}）"
 
     _set_status("checking", f"发现新版本 {version}（当前 {local}），准备升级...", "")
+    _append_history(f"发现新版本 {version}（当前 {local}）")
     files = manifest.get("files", [])
     if not files:
         _set_status("error", "清单中没有文件", "")
+        _append_history("清单中没有文件")
         return "清单中没有文件"
 
     total = len(files)
@@ -157,20 +171,25 @@ def ota_sync():
         # 安全校验：只允许 .py 文件，拒绝路径穿越（.. / 反斜杠）
         if ".." in path or "\\" in path or not path.endswith(_OTA_FILE_EXTS):
             _set_status("error", f"非法文件路径: {path}", "")
+            _append_history(f"非法文件路径: {path}")
             return f"非法文件路径: {path}"
         # 本地文件哈希一致则跳过（只下载变更文件，加快更新）
         if _local_sha256(path) == sha:
             _set_status("downloading", f"{path} 已是最新，跳过", f"{i + 1}/{total}")
+            _append_history(f"{path} 已是最新，跳过")
             continue
         _set_status("downloading", f"下载 {path}...", f"{i + 1}/{total}")
+        _append_history(f"下载 {path}...")
         err = _download_verify_overwrite(base_url, path, sha)
         if err:
             _set_status("error", err, f"{i + 1}/{total}")
+            _append_history(f"{path} 失败: {err}")
             return err
 
     _save_local_version(version)
     log.print_log(f"OTA 升级完成，当前版本 {version}，等待用户重启")
     _set_status("ready", f"升级完成（{version}），请点击重启生效", f"{total}/{total}")
+    _append_history(f"升级完成（{version}），请点击重启生效")
     return f"升级完成（{version}），请点击重启生效"
  
 
@@ -184,9 +203,11 @@ def check_sync():
         return "OTA 未配置（config.json 的 ota_url）"
     if not base_url.endswith("/"):
         base_url += "/"
+    _ota_status["history"] = []  # 清空上一次操作记录
     manifest, err = _fetch_manifest(base_url)
     if err:
         _set_status("error", err, "")
+        _append_history(f"获取清单失败: {err}")
         log.print_log(f"OTA 检查更新失败: {err}")
         return err
     version = manifest.get("version", "")
@@ -196,6 +217,7 @@ def check_sync():
     else:
         msg = f"发现新版本 {version}（当前 {local}），可执行升级"
     _set_status("idle", msg, "")
+    _append_history(msg)
     return msg
 
  
