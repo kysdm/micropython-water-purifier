@@ -52,6 +52,9 @@ def _set_status(state, message="", progress=""):
 
 def _fetch_text(url, timeout=10):
     """同步获取小文件文本（manifest 等）"""
+    import gc
+
+    gc.collect()  # TLS 握手解析证书链需较多内存，先释放缓存避免 MBEDTLS_ERR_X509_ALLOC_FAILED
     resp = urequests.get(url, timeout=timeout)
     try:
         return resp.text
@@ -119,6 +122,9 @@ def _download_verify_overwrite(base_url, path, sha256):
 
 def ota_sync():
     """OTA 主流程（在 network_hardware 线程同步执行）。返回提示文本"""
+    import gc
+
+    gc.collect()
     base_url = config.get_ota_url()
     if not base_url:
         return "OTA 未配置（config.json 的 ota_url）"
@@ -129,6 +135,7 @@ def ota_sync():
     manifest, err = _fetch_manifest(base_url)
     if err:
         _set_status("error", err, "")
+        log.print_log(f"OTA 升级失败（获取清单）: {err}")
         return err
     version = manifest.get("version", "")
 
@@ -169,6 +176,9 @@ def ota_sync():
 
 def check_sync():
     """只检查远端是否有新版本（不下载）。返回提示文本"""
+    import gc
+
+    gc.collect()
     base_url = config.get_ota_url()
     if not base_url:
         return "OTA 未配置（config.json 的 ota_url）"
@@ -177,6 +187,7 @@ def check_sync():
     manifest, err = _fetch_manifest(base_url)
     if err:
         _set_status("error", err, "")
+        log.print_log(f"OTA 检查更新失败: {err}")
         return err
     version = manifest.get("version", "")
     local = get_local_version()
