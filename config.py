@@ -169,6 +169,21 @@ def reset_t33_usage():
     update_config("t33", get_current_timestamp())
 
 
+FILTER_KEYS = ("pp", "cto", "udf", "ro", "t33")
+MAX_FILTER_DAYS = 3650  # 手动校准滤芯使用天数的上限（约 10 年）
+
+
+def set_filter_usage(filter_name, days):
+    """按已使用天数校准滤芯：安装时间戳 = 当前时间 - 天数×86400。非法输入返回 False"""
+    filter_name = filter_name.lower()
+    if filter_name not in FILTER_KEYS:
+        return False
+    if not isinstance(days, int) or not (0 <= days <= MAX_FILTER_DAYS):
+        return False
+    update_config(filter_name, get_current_timestamp() - days * 86400)
+    return True
+
+
 def set_wifi(wifi_ssid, wifi_password):
     update_config("wifi_ssid", wifi_ssid)
     update_config("wifi_password", wifi_password)

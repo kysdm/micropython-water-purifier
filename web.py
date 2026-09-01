@@ -125,6 +125,18 @@ def get_filter_usage():
     }
 
 
+# 获取滤芯安装日期（本地时间，仅页面显示参考）
+def get_filter_install_date(timestamp):
+    try:
+        import time
+        import time_utils
+
+        t = time.localtime(timestamp + time_utils.TIMEZONE_OFFSET)
+        return "{:04d}-{:02d}-{:02d}".format(t[0], t[1], t[2])
+    except Exception:
+        return "未知"
+
+
 # 获取倒计时时间（单位：分钟）
 def get_countdown_time():
     """
@@ -522,6 +534,16 @@ async def handle_request(reader, writer):
                 html += "<option value='tft'>TFT（ST7735）</option>"
                 html += "</select>"
                 html += "<input type='submit' value='保存'></form>"
+                html += "<h2>滤芯使用时间校准</h2>"
+                usage = get_filter_usage()
+                for filter_name in ["pp", "cto", "udf", "ro", "t33"]:
+                    install_ts = config.get_config_value(filter_name)
+                    html += f"<p>{filter_name.upper()}：使用 {usage.get(filter_name, '?')} 天（安装于 {get_filter_install_date(install_ts)}）"
+                    html += "<form method='POST' action='/system' style='display:inline;'>"
+                    html += "<input type='hidden' name='action' value='set_filter_usage'>"
+                    html += f"<input type='hidden' name='filter' value='{filter_name}'>"
+                    html += "已使用天数: <input type='number' name='days' min='0' max='3650' required>"
+                    html += "<input type='submit' value='保存'></form></p>"
                 html += "<h2>系统操作</h2>"
                 html += "<form method='POST' action='/system' onsubmit=\"return confirm('确定重启设备吗？');\">"
                 html += "<input type='hidden' name='action' value='reboot'>"
@@ -549,6 +571,21 @@ async def handle_request(reader, writer):
                     html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                     html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
                     html += "<h1>屏幕类型已保存</h1><p>重启设备后生效。</p>"
+                elif action == "set_filter_usage" and "filter" in params and "days" in params:
+                    try:
+                        days = int(params["days"])
+                    except ValueError:
+                        days = -1
+                    if config.set_filter_usage(params["filter"], days):
+                        log.print_log(f"WEB 校准滤芯 {params['filter'].upper()} 使用时间: {days} 天")
+                        html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                        html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                        html += f"<h1>校准成功</h1><p>{params['filter'].upper()} 已校准为 {days} 天。</p>"
+                    else:
+                        log.print_log(f"WEB 校准滤芯失败: filter={params.get('filter')} days={days}")
+                        html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                        html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                        html += "<h1>校准失败</h1><p>无效的滤芯名称或天数（0~3650）。</p>"
                 elif action == "reboot":
                     # 先完整响应浏览器（带 Content-Length，浏览器无需等连接关闭即可完成渲染，
                     # 避免设备 reset 导致连接中断后页面一直转圈）；
