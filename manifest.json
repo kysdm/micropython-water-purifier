@@ -1,5 +1,5 @@
 {
-  "version": "20260901135632",
+  "version": "20260901140356",
   "files": [
     {
       "path": "boot.py",
@@ -35,7 +35,7 @@
     },
     {
       "path": "ota.py",
-      "sha256": "2870c4dfd1d361e23d1e9dacea4a7a6b5e55b852042b82bf5c7855d4cf9dcd7d"
+      "sha256": "af7ecbd197787edcf9489e8e379fe2d56597ac493157cf1c0d62e31635073115"
     },
     {
       "path": "pins.py",
@@ -83,7 +83,7 @@
     },
     {
       "path": "web.py",
-      "sha256": "dca020b564ca847cdd10bc3866e0251d8e5514c75f145e0c7759d8fb144834a9"
+      "sha256": "04eb1c779c3147ca722c80f39633b74b91bddce6fe13ae2a2a55e38f0a2151db"
     },
     {
       "path": "wifi.py",
