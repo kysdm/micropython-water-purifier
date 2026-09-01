@@ -1,0 +1,36 @@
+name: 自动生成 OTA manifest
+
+on:
+  push:
+    branches:
+      - master
+    paths:
+      - "**/*.py"
+      - "tools/**"
+
+permissions:
+  contents: write
+
+jobs:
+  update-manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 生成 manifest.json
+        run: python3 tools/make_ota.py
+
+      - name: 提交并推送 manifest.json（有变化时）
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet manifest.json; then
+            echo "manifest.json 无变化，跳过提交"
+          else
+            VERSION=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+            git add manifest.json
+            git commit -m "chore: 自动更新 OTA manifest（版本 $VERSION）"
+            git pull --rebase origin master
+            git push
+          fi

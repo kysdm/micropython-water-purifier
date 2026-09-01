@@ -6,7 +6,7 @@ from time_utils import get_current_timestamp
 
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
-DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin"}
+DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": ""}
 REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
 
 # 缓存配置数据
@@ -172,6 +172,16 @@ def reset_t33_usage():
 def set_wifi(wifi_ssid, wifi_password):
     update_config("wifi_ssid", wifi_ssid)
     update_config("wifi_password", wifi_password)
+
+
+def get_ota_url():
+    # OTA 更新源基础 URL；空字符串表示未启用
+    value = get_config_value("ota_url")
+    return value if isinstance(value, str) else ""
+
+
+def set_ota_url(new_url):
+    update_config("ota_url", new_url.strip() if isinstance(new_url, str) else "")
 
 
 def get_web_password():
