@@ -240,6 +240,14 @@ async def apply_wifi_reconnect():
         log.print_log(f"WiFi 重连失败: {e}")
 
 
+def is_client_disconnect_error(e):
+    """客户端主动断开/连接中止（ECONNRESET/ECONNABORTED/EPIPE）不是服务器错误，静默处理"""
+    try:
+        return e.errno in (104, 113, 32)
+    except AttributeError:
+        return False
+
+
 async def handle_client(reader, writer):
     try:
         # 设置超时时间（例如 300 秒）
@@ -247,7 +255,8 @@ async def handle_client(reader, writer):
     except asyncio.TimeoutError:
         log.print_log("请求超时，关闭连接")
     except Exception as e:
-        log.print_log(f"处理客户端请求时出错: {e}")
+        if not is_client_disconnect_error(e):
+            log.print_log(f"处理客户端请求时出错: {e}")
     finally:
         await writer.aclose()
         # log.print_log("客户端断开")
@@ -782,7 +791,8 @@ async def handle_request(reader, writer):
         response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/html\r\n\r\n<h1>500 Internal Server Error</h1>"
         await writer.awrite(response.encode("utf-8"))
     except Exception as e:
-        log.print_log(f"处理客户端请求时出错: {e}")
+        if not is_client_disconnect_error(e):
+            log.print_log(f"处理客户端请求时出错: {e}")
 
 
 # 启动Web服务器
