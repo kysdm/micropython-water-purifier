@@ -146,13 +146,14 @@ def get_system_info():
         machine = os.uname().machine
         info["cpu"] = machine.split(" with ", 1)[1] if " with " in machine else machine
         v = os.statvfs("/")
-        info["rom_total"] = v[0] * v[2]  # 块大小 × 总块数
-        info["rom_free"] = v[0] * v[4]  # 块大小 × 可用块数
+        info["rom_total"] = v[0] * v[2]  # 块大小 × 总块数（文件系统分区大小，兜底用）
+        info["rom_free"] = v[0] * v[4]  # 块大小 × 可用块数（文件系统真实可用）
     except Exception:
         pass
     try:
         import esp32
 
+        info["rom_total"] = esp32.flash_size()  # 物理 Flash 总容量（如 N8R8 = 8MB）
         heaps = esp32.idf_heap_info(0)  # 所有堆（含 PSRAM）
         info["ram_total"] = sum(h[0] for h in heaps)
         info["ram_free"] = sum(h[1] for h in heaps)
