@@ -1,5 +1,5 @@
 {
-  "version": "20260902003611",
+  "version": "20260902130500",
   "files": [
     {
       "path": "boot.py",
@@ -83,7 +83,7 @@
     },
     {
       "path": "web.py",
-      "sha256": "94ea3d596f9517e59692f60cc0eae937006fbf22feaa702d26b7a6b8706583e7"
+      "sha256": "e987d8827f3bc283ed43b1886c68e9aacfa208712fe2bb69b0488e6409a4154e"
     },
     {
       "path": "wifi.py",
