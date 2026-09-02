@@ -646,10 +646,10 @@ async def handle_request(reader, writer):
                 html += "<table border='1' cellspacing='0' cellpadding='4'>"
                 html += f"<tr><td>CPU</td><td>{sys_info['cpu']}</td></tr>"
                 html += f"<tr><td>Flash</td><td>{_format_size(sys_info['flash_total'])}</td></tr>"
-                html += f"<tr><td>Storage</td><td>{_format_size(sys_info['fs_free'])} / {_format_size(sys_info['fs_total'])}</td></tr>"
-                html += f"<tr><td>RAM</td><td>{_format_size(sys_info['ram_free'])} / {_format_size(sys_info['ram_total'])}</td></tr>"
+                html += f"<tr><td>Storage</td><td>{_format_size(sys_info['fs_total'] - sys_info['fs_free'])} / {_format_size(sys_info['fs_total'])}</td></tr>"
+                html += f"<tr><td>RAM</td><td>{_format_size(sys_info['ram_total'] - sys_info['ram_free'])} / {_format_size(sys_info['ram_total'])}</td></tr>"
                 if sys_info["psram_total"] > 0:
-                    html += f"<tr><td>PSRAM</td><td>{_format_size(sys_info['psram_free'])} / {_format_size(sys_info['psram_total'])}</td></tr>"
+                    html += f"<tr><td>PSRAM</td><td>{_format_size(sys_info['psram_total'] - sys_info['psram_free'])} / {_format_size(sys_info['psram_total'])}</td></tr>"
                 else:
                     html += "<tr><td>PSRAM</td><td>Not enabled</td></tr>"
                 html += "</table>"
