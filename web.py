@@ -137,27 +137,99 @@ def get_filter_install_date(timestamp):
         return "未知"
 
 
-# 获取系统信息：CPU 型号、ROM（flash 文件系统）总量与可用、RAM 总量与可用
+# ---- 系统信息 ----
+# 统计口径（每个字段只代表一种含义，不混用）：
+#   flash_total ：整颗物理 Flash 容量（优先 esp32.flash_size() 实测；
+#                 该 API 缺失/返回 0 时用分区表推算，见限制说明）
+#   fs_total    ："/" 文件系统总容量（os.statvfs：块大小 × 总块数）
+#   fs_free     ："/" 文件系统可用容量（os.statvfs：块大小 × 可用块数）
+#   ram_total/free    ：内部 SRAM 堆（ESP-IDF 堆中容量 ≤1MB 者；含 MicroPython 之外的系统堆）
+#   psram_total/free  ：PSRAM 堆（ESP-IDF 堆中容量 >1MB 者；未启用时为 0）
+# 限制说明：
+#   - MicroPython GC heap 的物理位置由固件决定（可能位于 PSRAM），从 Python 层无法
+#     可靠判定，故不纳入 ram/psram 统计，避免不同口径混在一起。
+#   - 部分固件（如 Octal-SPIRAM 定制版）的 esp32.idf_heap_info 忽略 capability 参数
+#     （cap=0x10 也返回含 PSRAM 的全部堆），因此改用堆容量启发式区分：
+#     内部 SRAM 堆总量 ≤512KB，PSRAM 堆 ≥1MB（如 8MB），物理上不会误判。
+#   - esp32.idf_heap_info 元组按 v1.29 格式 (total, free, min_free, largest) 取前两项。
+#   - esp32 API 完全不可用时降级：ram 用 GC heap 统计（口径变为 MicroPython 堆，
+#     字段仍表示"可用/总量"），flash/psram 返回 0。
+#   - flash_size() 缺失/返回 0 时：用分区表推算（全部 APP/DATA 分区大小之和 +
+#     bootloader/分区表固定开销），推算值依赖标准分区布局，非实测。
+_PSRAM_MIN_TOTAL = 1024 * 1024  # 堆总量 >1MB 视为 PSRAM（内部 SRAM 物理上限 512KB）
+_FLASH_FIXED_OVERHEAD = 0x8000 + 0x2000  # bootloader(32KB) + 分区表(8KB) 固定开销
+
+
+def _estimate_flash_size():
+    """推算物理 Flash 容量：全部 APP/DATA 分区大小之和 + bootloader/分区表固定开销。
+    注意：推算值（非实测），依赖标准分区布局；esp32.flash_size() 可用时优先实测。"""
+    import esp32
+
+    total = _FLASH_FIXED_OVERHEAD
+    for p in esp32.Partition.find(esp32.Partition.TYPE_APP):
+        total += p.info()[3]  # size
+    for p in esp32.Partition.find(esp32.Partition.TYPE_DATA):
+        total += p.info()[3]
+    return total
+
+
+def _classify_heaps():
+    """汇总全部 ESP-IDF 堆并按容量区分内部 SRAM 与 PSRAM。
+    返回 (ram_total, ram_free, psram_total, psram_free)"""
+    import esp32
+
+    ram_total = ram_free = psram_total = psram_free = 0
+    for h in esp32.idf_heap_info(0):  # 0 = 所有堆（cap 参数在部分固件被忽略，故取全部自行分类）
+        total = h[0]
+        free = h[1]
+        if total > _PSRAM_MIN_TOTAL:
+            psram_total += total
+            psram_free += free
+        else:
+            ram_total += total
+            ram_free += free
+    return ram_total, ram_free, psram_total, psram_free
+
+
 def get_system_info():
-    info = {"cpu": "未知", "rom_total": 0, "rom_free": 0, "ram_total": 0, "ram_free": 0}
+    info = {
+        "cpu": "未知",
+        "flash_total": 0,
+        "fs_total": 0,
+        "fs_free": 0,
+        "ram_total": 0,
+        "ram_free": 0,
+        "psram_total": 0,
+        "psram_free": 0,
+    }
     try:
         import os
 
-        machine = os.uname().machine
-        info["cpu"] = machine.split(" with ", 1)[1] if " with " in machine else machine
+        info["cpu"] = os.uname().machine  # 完整型号描述（如 "Octal-SPIRAM with ESP32-S3"）
+    except Exception:
+        pass
+    try:
+        import os
+
         v = os.statvfs("/")
-        info["rom_total"] = v[0] * v[2]  # 块大小 × 总块数（文件系统分区大小，兜底用）
-        info["rom_free"] = v[0] * v[4]  # 块大小 × 可用块数（文件系统真实可用）
+        info["fs_total"] = v[0] * v[2]  # 块大小 × 总块数
+        info["fs_free"] = v[0] * v[4]  # 块大小 × 可用块数
     except Exception:
         pass
     try:
         import esp32
 
-        info["rom_total"] = esp32.flash_size()  # 物理 Flash 总容量（如 N8R8 = 8MB）
-        heaps = esp32.idf_heap_info(0)  # 所有堆（含 PSRAM）
-        info["ram_total"] = sum(h[0] for h in heaps)
-        info["ram_free"] = sum(h[1] for h in heaps)
+        flash_fn = getattr(esp32, "flash_size", None)  # 部分固件无此 API
+        if flash_fn is not None:
+            flash = flash_fn()
+            if flash and flash > 0:
+                info["flash_total"] = flash
+        if not info["flash_total"]:
+            info["flash_total"] = _estimate_flash_size()  # 分区表推算（见限制说明）
+        (info["ram_total"], info["ram_free"],
+         info["psram_total"], info["psram_free"]) = _classify_heaps()
     except Exception:
+        # esp32 API 不可用：降级用 MicroPython GC heap 统计内存（口径变化，见模块注释）
         import gc
 
         gc.collect()
@@ -166,8 +238,11 @@ def get_system_info():
     return info
 
 
-def _format_mb(bytes_value):
-    return "{:.1f} MB".format(bytes_value / 1024 / 1024)
+def _format_size(size_bytes):
+    """字节数格式化：≥1MB 显示 MB（1 位小数），否则显示 KB"""
+    if size_bytes >= 1024 * 1024:
+        return "{:.1f} MB".format(size_bytes / 1024 / 1024)
+    return "{} KB".format(size_bytes // 1024)
 
 
 # 获取倒计时时间（单位：分钟）
@@ -568,7 +643,16 @@ async def handle_request(reader, writer):
                 html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
                 html += "<h1>系统配置</h1>"
                 sys_info = get_system_info()
-                html += f"<p>CPU: {sys_info['cpu']} | ROM: {_format_mb(sys_info['rom_free'])} / {_format_mb(sys_info['rom_total'])} | RAM: {_format_mb(sys_info['ram_free'])} / {_format_mb(sys_info['ram_total'])}</p>"
+                html += "<table border='1' cellspacing='0' cellpadding='4'>"
+                html += f"<tr><td>CPU</td><td>{sys_info['cpu']}</td></tr>"
+                html += f"<tr><td>Flash</td><td>{_format_size(sys_info['flash_total'])}</td></tr>"
+                html += f"<tr><td>Storage</td><td>{_format_size(sys_info['fs_free'])} / {_format_size(sys_info['fs_total'])}</td></tr>"
+                html += f"<tr><td>RAM</td><td>{_format_size(sys_info['ram_free'])} / {_format_size(sys_info['ram_total'])}</td></tr>"
+                if sys_info["psram_total"] > 0:
+                    html += f"<tr><td>PSRAM</td><td>{_format_size(sys_info['psram_free'])} / {_format_size(sys_info['psram_total'])}</td></tr>"
+                else:
+                    html += "<tr><td>PSRAM</td><td>Not enabled</td></tr>"
+                html += "</table>"
                 html += "<h2>屏幕类型（硬件上只接一块屏，重启生效）</h2>"
                 html += f"<p>当前屏幕类型: {config.get_display_type() or '（未配置，使用默认）'}</p>"
                 html += "<form method='POST' action='/system'>"
