@@ -46,6 +46,11 @@ IDLE_TIMEOUT_S = 5 * 60  # 纯空闲模式：无运行状态且空闲超过该�
 ORBIT_INTERVAL_S = 5 * 60  # 像素偏移间隔（秒）
 ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循环位置（横向 3 档 x 纵向 2 档）
 ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（自动点亮并保持）
+# 左侧滤芯标签冒号的 X 坐标（独立可调）：滤芯数值从 x=31 起右对齐 4 格（到 x=63）。
+# 数值 ≥2000 时千位为 2~9 等宽笔画数字会贴近冒号（1000~1999 千位为 "1"，笔画少视觉不贴）；
+# 实机验证 _FILTER_COLON_X = 24 效果最佳。
+# 注意 UDF/CTO 三字母标签与 T33 的 "33" 小字（约到 x=25），不宜再小于 24。
+_FILTER_COLON_X = 24
 
 # TFT 状态文字颜色（RGB565；OLED 单色屏自动忽略，统一白色）
 # 注：ST7735 为 TN 屏视角窄，纯色（单通道）侧面看不清，故用浅色（多通道）保证侧面可读
@@ -283,8 +288,10 @@ def _draw_static_layout():
     ly = _layout()
     screen_h = display.height
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
-    for i, label in enumerate(("PP :", "UDF:", "CTO:", "RO :", "T  :")):
+    # 标签不含冒号：冒号单独绘制（X 坐标独立为 _FILTER_COLON_X，可调）
+    for i, label in enumerate(("PP", "UDF", "CTO", "RO", "T")):
         draw_english(label, 2, ly["filter_y"][i])
+        draw_english(":", _FILTER_COLON_X, ly["filter_y"][i])
     # T33 数字用 12px 小字号，下移 2px 与 16px 标签底边对齐
     draw_english_small("33", 9, ly["filter_y"][4] + 2)
 
@@ -293,7 +300,7 @@ def _draw_static_layout():
     draw_chinese_small("温度", 67, ly["right_y"][2])
     draw_chinese_small("状态", 67, ly["right_y"][3])
     for i in range(4):
-        draw_english_small(":", 91, ly["right_y"][i])
+        draw_english_small(":", 90, ly["right_y"][i])
     # 温度
     draw_chinese("°", 113, ly["temp_unit_y"])
     draw_english("C", 119, ly["temp_unit_y"])
