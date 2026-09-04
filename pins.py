@@ -40,4 +40,7 @@ rgb_led = Pin(48, Pin.OUT)
 OLED_PINS = {"sda": 1, "scl": 2}  # OLED I2C 引脚，按实际接线修改
 # TFT：ST7735 SPI。模块丝印习惯标 SCL/SDA，即 SPI 的 SCK/MOSI；
 # 与模块丝印对照：SCL=sclk(7) SDA=mosi(8) CS=14 DC=15 RST=16 BLK=bl(21)，VCC 接 3.3V、GND 接地
-TFT_PINS = {"sclk": 7, "mosi": 8, "cs": 14, "dc": 15, "rst": 16, "bl": 21}  # TFT SPI 引脚，按实际接线修改
+# miso=3 为哑引脚（无实际接线）：TFT 只写不读，但硬件 SPI 必须显式指定 MISO，
+# 省略时固件会启用该 host 的默认 MISO（实测占用 GPIO13 进水电磁阀，导致进水阀无反应）。
+# 取值须避开项目已用引脚。
+TFT_PINS = {"sclk": 7, "mosi": 8, "cs": 14, "dc": 15, "rst": 16, "bl": 21, "miso": 3}  # TFT SPI 引脚，按实际接线修改

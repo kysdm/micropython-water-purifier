@@ -132,22 +132,27 @@ class OLEDScreen:
 class TFTScreen:
     """ST7735 TFT（1.8 寸 128×160，SPI，RGB565）"""
 
-    def __init__(self, pins):
+    def __init__(self, pin_cfg):
+        # 形参名不用 pins：避免遮蔽模块 pins（pins.py），字段统一经 pin_cfg[...] 访问
         import st7735
         from machine import Pin, SPI
 
         self.width = 128
         self.height = 160
-        self._pins = pins
+        self._pins = pin_cfg
         # 硬件 SPI 必须用编号 1：SPI(2) 在 ESP32-S3 + Generic ESP32S3 module
         # with Octal-SPIRAM（MicroPython 1.29.0）固件上初始化即触发 TG1WDT 复位
         # （实测）；SPI(1) 在 40MHz 下正常，SCK/MOSI 经 GPIO Matrix 映射到 GPIO7/8
+        # MISO 必须显式指定（TFT 只写不读，pin_cfg["miso"] 为哑占位引脚）：
+        # 若省略，固件会启用默认 MISO 并占用 GPIO13（进水电磁阀），导致制水/冲洗
+        # 时进水阀输出失效（实测确认）
         self.spi = SPI(1, baudrate=40000000, polarity=0, phase=0,
-                       sck=Pin(pins["sclk"]), mosi=Pin(pins["mosi"]))
-        self.cs = Pin(pins["cs"], Pin.OUT, value=1)
-        self.dc = Pin(pins["dc"], Pin.OUT, value=0)
-        self.rst = Pin(pins["rst"], Pin.OUT, value=1)
-        self.bl = Pin(pins["bl"], Pin.OUT, value=1) if pins["bl"] is not None else None
+                       sck=Pin(pin_cfg["sclk"]), mosi=Pin(pin_cfg["mosi"]),
+                       miso=Pin(pin_cfg["miso"]))
+        self.cs = Pin(pin_cfg["cs"], Pin.OUT, value=1)
+        self.dc = Pin(pin_cfg["dc"], Pin.OUT, value=0)
+        self.rst = Pin(pin_cfg["rst"], Pin.OUT, value=1)
+        self.bl = Pin(pin_cfg["bl"], Pin.OUT, value=1) if pin_cfg["bl"] is not None else None
         self.dev = st7735.ST7735(self.spi, cs=self.cs, dc=self.dc, rst=self.rst,
                                  width=self.width, height=self.height,
                                  x_offset=TFT_X_OFFSET, y_offset=TFT_Y_OFFSET,
