@@ -653,6 +653,15 @@ async def handle_request(reader, writer):
                 else:
                     html += "<tr><td>PSRAM</td><td>Not enabled</td></tr>"
                 html += "</table>"
+                html += "<h2>TFT 颜色顺序（仅 TFT 屏，重启生效）</h2>"
+                html += f"<p>当前: {'BGR（红蓝互换）' if config.get_tft_bgr() else 'RGB（正常）'}</p>"
+                html += "<form method='POST' action='/system'>"
+                html += "<input type='hidden' name='action' value='update_tft_bgr'>"
+                html += "<select name='new_tft_bgr'>"
+                html += "<option value='rgb'>RGB（正常）</option>"
+                html += "<option value='bgr'>BGR（红蓝互换）</option>"
+                html += "</select>"
+                html += "<input type='submit' value='保存'></form>"
                 html += "<h2>屏幕类型（硬件上只接一块屏，重启生效）</h2>"
                 html += f"<p>当前屏幕类型: {config.get_display_type() or '（未配置，使用默认）'}</p>"
                 html += "<form method='POST' action='/system'>"
@@ -691,7 +700,15 @@ async def handle_request(reader, writer):
                         params[key] = url_decode(value)
 
                 action = params.get("action", "")
-                if action == "update_display_type":
+                if action == "update_tft_bgr":
+                    new_bgr = params.get("new_tft_bgr", "")
+                    if new_bgr in ("rgb", "bgr"):
+                        config.set_tft_bgr(new_bgr == "bgr")
+                        log.print_log(f"WEB 设置 TFT 颜色顺序: {new_bgr}（重启后生效）")
+                    html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                    html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                    html += "<h1>TFT 颜色顺序已保存</h1><p>重启设备后生效。</p>"
+                elif action == "update_display_type":
                     new_display_type = params.get("new_display_type", "")
                     if new_display_type in ("oled", "tft"):
                         config.set_display_type(new_display_type)

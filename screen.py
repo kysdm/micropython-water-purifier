@@ -38,7 +38,8 @@ DISPLAY_TYPE = config.get_display_type() or _detect_display_type()
 # 屏幕引脚定义统一在 pins.py（OLED_PINS / TFT_PINS）
 TFT_X_OFFSET = 0  # 部分 1.8 寸模块显示左移/上移时需要 1~2 像素偏移
 TFT_Y_OFFSET = 0
-TFT_BGR = True  # 颜色红蓝互换时改 True（白字界面通常无感，但建议按屏幕实际调）
+# TFT 红蓝通道顺序（True=BGR）：不同批次的 ST7735 面板可能不同，
+# 由 config.json 的 tft_bgr 配置（/system 页面可改，重启生效），不再写死
 
 _TFT_FG = 0xFFFF  # TFT 前景色（白）
 
@@ -147,7 +148,8 @@ class TFTScreen:
         self.bl = Pin(pins["bl"], Pin.OUT, value=1) if pins["bl"] is not None else None
         self.dev = st7735.ST7735(self.spi, cs=self.cs, dc=self.dc, rst=self.rst,
                                  width=self.width, height=self.height,
-                                 x_offset=TFT_X_OFFSET, y_offset=TFT_Y_OFFSET, bgr=TFT_BGR)
+                                 x_offset=TFT_X_OFFSET, y_offset=TFT_Y_OFFSET,
+                                 bgr=config.get_tft_bgr())
 
     def reinit(self):
         self.__init__(self._pins)

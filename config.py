@@ -6,7 +6,7 @@ from time_utils import get_current_timestamp
 
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
-DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": ""}
+DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": "", "tft_bgr": False}
 REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
 
 # 缓存配置数据
@@ -198,6 +198,16 @@ def get_display_type():
 def set_display_type(new_type):
     if new_type in ("oled", "tft"):
         update_config("display_type", new_type)
+
+
+def get_tft_bgr():
+    """TFT 颜色通道顺序（True=BGR 红蓝互换）；未配置时默认 False（RGB）"""
+    value = get_config_value("tft_bgr")
+    return value if isinstance(value, bool) else DEFAULT_CONFIG.get("tft_bgr", False)
+
+
+def set_tft_bgr(new_bgr):
+    update_config("tft_bgr", bool(new_bgr))
 
 
 def get_ota_url():
