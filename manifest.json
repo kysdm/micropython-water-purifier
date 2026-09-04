@@ -1,5 +1,5 @@
 {
-  "version": "20260904053700",
+  "version": "20260904142823",
   "files": [
     {
       "path": "boot.py",
@@ -23,7 +23,7 @@
     },
     {
       "path": "log.py",
-      "sha256": "80ae6a01f5530a22e31cd0b0530dec6d388032fc800812e14e7f7a499897d0fc"
+      "sha256": "07174adc066bdcd7a515561cd51fad68172e6b511d6715aacc3caac6d1a76e83"
     },
     {
       "path": "main.py",
@@ -39,11 +39,11 @@
     },
     {
       "path": "pins.py",
-      "sha256": "9d785fc0b0f2a9f3e8309698409dad1d76528d04e1e0a3f07950340b2fdac5a8"
+      "sha256": "7a0a767496029fee9274cb40d902d6d0f89c2cd54b69702fdf9119baebc9cd38"
     },
     {
       "path": "screen.py",
-      "sha256": "6ab583a3dce98c60acf41f0a5c47a45d30cadc9932f35268efe90d9b8e818b2e"
+      "sha256": "042c85f0a807441dc7c9020b6559d6f46908497f01371b119001e3a403782106"
     },
     {
       "path": "screen_ui.py",
@@ -83,7 +83,7 @@
     },
     {
       "path": "web.py",
-      "sha256": "c6131dffe6d9240ad3c8c909fdd39ed2c719f56a35dff5ca219c9c9ab838048a"
+      "sha256": "23d9fe27bf41f3c74a38e716f8399ece7dee8bdec73ee01ca8b297ccce9ddd68"
     },
     {
       "path": "wifi.py",
