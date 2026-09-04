@@ -62,15 +62,17 @@ class OLEDScreen:
 
     def __init__(self):
         import ssd1306
-        from machine import Pin, SoftI2C
+        from machine import Pin, I2C
 
         self.width = 128
         self.height = 64
-        self.i2c = SoftI2C(sda=Pin(pins.OLED_PINS["sda"]), scl=Pin(pins.OLED_PINS["scl"]))
+        # 硬件 I2C(0)（400 kHz）：替代 SoftI2C 软件模拟，降低 CPU 开销，
+        # 与 TFT 硬件 SPI 配置保持一致；GPIO1/2 接线不变
+        self.i2c = I2C(0, sda=Pin(pins.OLED_PINS["sda"]), scl=Pin(pins.OLED_PINS["scl"]), freq=400000)
         self.dev = ssd1306.SSD1306_I2C(self.width, self.height, self.i2c)
 
     def reset_bus(self):
-        """复位 SoftI2C 总线（OLED 专用，释放被卡住的从机）"""
+        """复位 I2C 总线（OLED 专用，释放被卡住的从机；硬件 I2C 通信不冲突）"""
         from machine import Pin
 
         scl = Pin(pins.OLED_PINS["scl"], Pin.OUT, Pin.PULL_UP)
@@ -207,5 +209,13 @@ def get_screen(force_reinit=False):
         if DISPLAY_TYPE == "tft":
             _screen = TFTScreen(pins.TFT_PINS)
         else:
+            # OLED 故障恢复：先 reset_bus（SCL 脉冲）释放可能卡死总线的从机——
+            # 从机把 SDA 拉低时仅重建 I2C 无法恢复；reset 后再重建硬件 I2C 才是
+            # 完整恢复（首次创建 _screen 为 None，无需 reset）
+            if _screen is not None:
+                try:
+                    _screen.reset_bus()
+                except Exception:
+                    pass  # TFT 无 reset_bus 或总线已损坏，直接走重建
             _screen = OLEDScreen()
     return _screen
