@@ -480,7 +480,12 @@ async def handle_request(reader, writer):
                 html += "<html><head><meta charset='utf-8'><title>滤芯状态</title></head><body>"
                 html += "<h1>净水器状态</h1>"
                 html += "<h2>传感器</h2>"
-                html += f"<p>{log.get_state()}</p>"
+                # 状态串（与日志同源）：逐字段分行展示
+                html += "<table border='1' cellspacing='0' cellpadding='4'>"
+                for item in log.get_state().split("|"):
+                    name, _, value = item.partition(":")
+                    html += f"<tr><td>{name}</td><td>{value}</td></tr>"
+                html += "</table>"
                 html += "<h2>滤芯使用时间（单位：天）</h2>"
                 html += "<table border='1' cellspacing='0' cellpadding='5'>"
                 html += "<tr><th>滤芯</th><th>使用时间</th><th>操作</th></tr>"

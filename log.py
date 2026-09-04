@@ -70,10 +70,17 @@ def get_state():
 
     state_list = []
 
-    state_list.append("进水√" if pins.low_pressure_switch.value() == 0 else "进水×")
-    state_list.append("制水√" if pins.high_pressure_switch.value() == 0 else "制水×")
-    state_list.append("压力桶进水√" if pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value() == 1 else "压力桶进水×")
-    state_list.append("压力桶出水√" if pins.pressure_bucket_to_water_outlet_solenoid_valve_switch.value() == 1 else "压力桶出水×")
+    # 高低压开关（通俗语义）：
+    #   高压开关（GPIO4）：0 = 龙头开（需制水），1 = 龙头关（压力达标）
+    #   低压开关（GPIO5）：1 = 缺水（进水压力不足），0 = 进水正常
+    state_list.append("高压:龙头开" if pins.high_pressure_switch.value() == 0 else "高压:龙头关")
+    state_list.append("低压:缺水" if pins.low_pressure_switch.value() == 1 else "低压:正常")
+    # 各电磁阀/泵（开 = 通电开启，关 = 关闭）
+    state_list.append("进水阀:开" if pins.water_inlet_solenoid_valve_switch.value() == 1 else "进水阀:关")
+    state_list.append("废水阀:开" if pins.wastewater_solenoid_valve_switch.value() == 1 else "废水阀:关")
+    state_list.append("增压泵:开" if pins.booster_pump_solenoid_valve_switch.value() == 1 else "增压泵:关")
+    state_list.append("桶进水阀:开" if pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value() == 1 else "桶进水阀:关")
+    state_list.append("桶出水阀:开" if pins.pressure_bucket_to_water_outlet_solenoid_valve_switch.value() == 1 else "桶出水阀:关")
     state_list.append(f"纯水TDS:{water.purified_water_tds_value}")
     state_list.append(f"废水TDS:{water.wastewater_tds_value}")
     state_list.append(f"累计运行:{time_utils.ms_to_timestr_with_units(water.timer.elapsed())}")
