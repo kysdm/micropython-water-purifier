@@ -128,7 +128,10 @@ class TFTScreen:
         self.width = 128
         self.height = 160
         self._pins = pins
-        self.spi = SPI(2, baudrate=40000000, polarity=0, phase=0,
+        # 硬件 SPI 必须用编号 1：SPI(2) 在 ESP32-S3 + Generic ESP32S3 module
+        # with Octal-SPIRAM（MicroPython 1.29.0）固件上初始化即触发 TG1WDT 复位
+        # （实测）；SPI(1) 在 40MHz 下正常，SCK/MOSI 经 GPIO Matrix 映射到 GPIO7/8
+        self.spi = SPI(1, baudrate=40000000, polarity=0, phase=0,
                        sck=Pin(pins["sclk"]), mosi=Pin(pins["mosi"]))
         self.cs = Pin(pins["cs"], Pin.OUT, value=1)
         self.dc = Pin(pins["dc"], Pin.OUT, value=0)
