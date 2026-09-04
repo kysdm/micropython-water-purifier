@@ -70,11 +70,11 @@ def get_state():
 
     state_list = []
 
-    # 高低压开关（通俗语义）：
-    #   高压开关（GPIO4）：0 = 龙头开（需制水），1 = 龙头关（压力达标）
-    #   低压开关（GPIO5）：1 = 缺水（进水压力不足），0 = 进水正常
-    state_list.append("高压:龙头开" if pins.high_pressure_switch.value() == 0 else "高压:龙头关")
-    state_list.append("低压:缺水" if pins.low_pressure_switch.value() == 1 else "低压:正常")
+    # 高低压开关（高/低）：
+    #   高压开关（GPIO4）：高 = 龙头关（压力达标），低 = 龙头开（需制水）
+    #   低压开关（GPIO5）：高 = 进水正常，低 = 缺水（进水压力不足）
+    state_list.append("高压:高" if pins.high_pressure_switch.value() == 1 else "高压:低")
+    state_list.append("低压:高" if pins.low_pressure_switch.value() == 0 else "低压:低")
     # 各电磁阀/泵（开 = 通电开启，关 = 关闭）
     state_list.append("进水阀:开" if pins.water_inlet_solenoid_valve_switch.value() == 1 else "进水阀:关")
     state_list.append("废水阀:开" if pins.wastewater_solenoid_valve_switch.value() == 1 else "废水阀:关")
