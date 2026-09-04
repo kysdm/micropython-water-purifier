@@ -663,7 +663,7 @@ async def handle_request(reader, writer):
                 html += "</select>"
                 html += "<input type='submit' value='保存'></form>"
                 html += "<h2>屏幕类型（硬件上只接一块屏，重启生效）</h2>"
-                html += f"<p>当前屏幕类型: {config.get_display_type() or '（未配置，使用默认）'}</p>"
+                html += f"<p>当前屏幕类型: {(config.get_display_type() or '').upper() or '（未配置，使用默认）'}</p>"
                 html += "<form method='POST' action='/system'>"
                 html += "<input type='hidden' name='action' value='update_display_type'>"
                 html += "<select name='new_display_type'>"
