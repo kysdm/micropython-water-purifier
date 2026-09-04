@@ -175,8 +175,9 @@ def _build_char_fb(byte_data, w, h, color):
     if screen.get_type() == "tft":
         buf = bytearray(w * h * 2)
         fb = framebuf.FrameBuffer(buf, w, h, framebuf.RGB565)
-        # color=1 表示默认前景白（与逐像素版 _tft_color 映射一致），其余为具体 RGB565 值
-        fg = 0xFFFF if color == 1 else color
+        # color=1 表示默认前景白（与逐像素版 _tft_color 映射一致），其余为具体 RGB565 值；
+        # 必须经 rgb565_byteswap 字节交换（framebuf 小端存储 vs ST7735 大端传输）
+        fg = screen.rgb565_byteswap(0xFFFF if color == 1 else color)
         for y in range(h):
             row = byte_data[y]
             for x in range(w):

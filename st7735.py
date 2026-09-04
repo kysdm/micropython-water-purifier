@@ -111,7 +111,9 @@ class ST7735(framebuf.FrameBuffer):
         time.sleep_ms(100)
 
     def show(self):
-        """将 framebuffer 推送到屏幕（RGB565，含行列偏移）"""
+        """将 framebuffer 推送到屏幕（RGB565，含行列偏移）。
+        字节序由绘制层统一处理（screen._tft_color / screen_ui._build_char_fb
+        已做 RGB565 字节交换，本驱动直接发送内存内容即可）"""
         self._write_cmd(_CASET)
         self._write_data(bytes((0x00, self._x_offset, 0x00, self._x_offset + self._width - 1)))
         self._write_cmd(_RASET)

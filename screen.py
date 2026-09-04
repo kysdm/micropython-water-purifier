@@ -43,9 +43,17 @@ TFT_BGR = True  # 颜色红蓝互换时改 True（白字界面通常无感，但
 _TFT_FG = 0xFFFF  # TFT 前景色（白）
 
 
+def rgb565_byteswap(c):
+    """RGB565 字节序交换：MicroPython framebuf.RGB565 按小端存储（低字节在前），
+    而 ST7735 期望先收高字节（大端传输）；不交换时彩色会错乱成近白色
+    （白色 0xFFFF / 黑色 0x0000 高低字节对称，交换后不变，故黑白 UI 未暴露此问题）。
+    所有写入 TFT framebuf 的颜色都必须先经此函数交换。"""
+    return ((c & 0xFF) << 8) | (c >> 8)
+
+
 def _tft_color(c):
-    """TFT 颜色映射：1 = 默认前景白；0 = 黑；其他值 = 具体 RGB565 颜色"""
-    return _TFT_FG if c == 1 else c
+    """TFT 颜色映射：1 = 默认前景白；0 = 黑；其他值 = 具体 RGB565 颜色（已做字节交换）"""
+    return rgb565_byteswap(_TFT_FG if c == 1 else c)
 
 
 class OLEDScreen:
