@@ -291,7 +291,7 @@ def _draw_static_layout():
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
     # 标签不含冒号：冒号单独绘制（X 坐标独立为 _FILTER_COLON_X，可调）
     for i, label in enumerate(("PP", "UDF", "CTO", "RO", "T")):
-        draw_english(label, 2, ly["filter_y"][i])
+        draw_english(label, 1, ly["filter_y"][i])
         draw_english(":", _FILTER_COLON_X, ly["filter_y"][i])
     # T33 数字用 12px 小字号，下移 2px 与 16px 标签底边对齐
     draw_english_small("33", 9, ly["filter_y"][4] + 2)
