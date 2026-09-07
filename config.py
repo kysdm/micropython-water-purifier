@@ -6,7 +6,7 @@ from time_utils import get_current_timestamp
 
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
-DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": "", "tft_bgr": False}
+DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": "", "tft_bgr": False, "led_type": "ws2812b"}
 REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
 
 # 缓存配置数据
@@ -208,6 +208,20 @@ def get_tft_bgr():
 
 def set_tft_bgr(new_bgr):
     update_config("tft_bgr", bool(new_bgr))
+
+
+LED_TYPES = ("ws2812b", "led")  # GPIO48 灯类型：ws2812b=RGB 灯带（默认），led=普通 LED（非空闲点亮）
+
+
+def get_led_type():
+    """GPIO48 灯类型；未配置或非法时默认 ws2812b（与旧设备行为一致）"""
+    value = get_config_value("led_type")
+    return value if value in LED_TYPES else DEFAULT_CONFIG.get("led_type", "ws2812b")
+
+
+def set_led_type(new_type):
+    if new_type in LED_TYPES:
+        update_config("led_type", new_type)
 
 
 def get_ota_url():

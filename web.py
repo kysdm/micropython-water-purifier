@@ -676,6 +676,15 @@ async def handle_request(reader, writer):
                 html += "<option value='tft'>TFT（ST7735）</option>"
                 html += "</select>"
                 html += "<input type='submit' value='保存'></form>"
+                html += "<h2>GPIO48 LED 类型（重启生效）</h2>"
+                html += f"<p>当前: {'普通 LED（非空闲点亮）' if config.get_led_type() == 'led' else 'WS2812B（RGB 灯带）'}</p>"
+                html += "<form method='POST' action='/system'>"
+                html += "<input type='hidden' name='action' value='update_led_type'>"
+                html += "<select name='new_led_type'>"
+                html += "<option value='ws2812b'>WS2812B（RGB 灯带）</option>"
+                html += "<option value='led'>普通 LED（非空闲点亮）</option>"
+                html += "</select>"
+                html += "<input type='submit' value='保存'></form>"
                 html += "<h2>滤芯使用时间校准</h2>"
                 usage = get_filter_usage()
                 for filter_name in ["pp", "cto", "udf", "ro", "t33"]:
@@ -721,6 +730,14 @@ async def handle_request(reader, writer):
                     html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
                     html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
                     html += "<h1>屏幕类型已保存</h1><p>重启设备后生效。</p>"
+                elif action == "update_led_type":
+                    new_led_type = params.get("new_led_type", "")
+                    if new_led_type in ("ws2812b", "led"):
+                        config.set_led_type(new_led_type)
+                        log.print_log(f"WEB 设置 GPIO48 LED 类型: {new_led_type}（重启后生效）")
+                    html = "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n"
+                    html += "<html><head><meta charset='utf-8'><title>系统配置</title></head><body>"
+                    html += "<h1>LED 类型已保存</h1><p>重启设备后生效。</p>"
                 elif action == "set_filter_usage" and "filter" in params and "days" in params:
                     try:
                         days = int(params["days"])

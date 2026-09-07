@@ -13,12 +13,17 @@ import log
 from pins import rgb_led
 from tds import get_tds_and_temperature, TDS_INVALID, get_recent_pure_tds
 from timer import Timer
-from ws2812b import WS2812B
+from ws2812b import WS2812B, PlainLed
 
 
 timer = Timer()  # 计时器
 forced_flush_ro_task = None  # 强制冲洗RO膜任务事件
-led = WS2812B(1, rgb_led)  # 灯带对象
+# GPIO48 状态灯：ws2812b=RGB 灯带（颜色指示）；led=普通 LED（非空闲点亮、空闲熄灭）。
+# 配置在 /system 页设置，重启后生效（模块导入时创建一次）。
+if config.get_led_type() == "led":
+    led = PlainLed(rgb_led)
+else:
+    led = WS2812B(1, rgb_led)  # 灯带对象
 
 purified_water_tds_value = 0  # 纯水TDS值
 wastewater_tds_value = 0  # 废水TDS值
