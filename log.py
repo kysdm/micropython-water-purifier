@@ -139,7 +139,13 @@ def print_log(msg):
     """
     同步打印日志信息，并写入内存日志
     """
-    msg = f"[{get_time()}] - [{get_state()}] - {msg}"
+    try:
+        # 状态信息来自 water/pins 等业务模块；启动早期模块尚未就绪时可能失败，
+        # 日志本身不应因此崩溃（如 config 缺键补全在导入链早期打印日志）
+        state = get_state()
+    except Exception:
+        state = "状态未就绪"
+    msg = f"[{get_time()}] - [{state}] - {msg}"
     print(msg)
     write_log(msg)
 

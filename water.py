@@ -19,11 +19,31 @@ from ws2812b import WS2812B, PlainLed
 timer = Timer()  # 计时器
 forced_flush_ro_task = None  # 强制冲洗RO膜任务事件
 # GPIO48 状态灯：ws2812b=RGB 灯带（颜色指示）；led=普通 LED（非空闲点亮、空闲熄灭）。
-# 配置在 /system 页设置，重启后生效（模块导入时创建一次）。
-if config.get_led_type() == "led":
-    led = PlainLed(rgb_led)
-else:
-    led = WS2812B(1, rgb_led)  # 灯带对象
+# 惰性创建：不在模块导入期读取 config（导入早期 config 可能尚未加载完成，
+# 读配置会递归触发 load_config 导致启动崩溃）；首次使用时才按配置创建，重启后生效。
+class _StatusLedProxy:
+    def __init__(self):
+        self._impl = None
+
+    def _get(self):
+        if self._impl is None:
+            if config.get_led_type() == "led":
+                self._impl = PlainLed(rgb_led)
+            else:
+                self._impl = WS2812B(1, rgb_led)  # 灯带对象
+        return self._impl
+
+    def set_color(self, r, g, b):
+        self._get().set_color(r, g, b)
+
+    def set_colors(self, colors):
+        self._get().set_colors(colors)
+
+    def clear(self):
+        self._get().clear()
+
+
+led = _StatusLedProxy()
 
 purified_water_tds_value = 0  # 纯水TDS值
 wastewater_tds_value = 0  # 废水TDS值
