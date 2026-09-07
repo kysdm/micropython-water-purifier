@@ -7,7 +7,7 @@ from time_utils import get_current_timestamp
 # 配置文件名、默认配置和必需字段
 CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {"pure_water_ro_clean_timeout": 5, "ro_force_clean_time": 30, "countdown_time": 45, "tds": 10, "fill_tds": 10, "pp": 795584368, "cto": 795584368, "udf": 795584368, "ro": 795584368, "t33": 795584368, "wifi_ssid": "esp32", "wifi_password": "12345678", "web_password": "admin", "ota_url": "", "tft_bgr": False, "led_type": "ws2812b"}
-REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "wifi_ssid", "wifi_password"}
+REQUIRED_KEYS = {"pure_water_ro_clean_timeout", "ro_force_clean_time", "tds", "countdown_time", "pp", "cto", "udf", "ro", "t33", "fill_tds", "wifi_ssid", "wifi_password", "web_password", "ota_url", "tft_bgr", "led_type"}
 
 # 缓存配置数据
 _config_cache = None
@@ -32,19 +32,21 @@ def load_config(force_reload=False):
             log.print_log("配置文件为空，使用默认配置")
             raise ValueError("配置为空")
 
-        # 验证必需字段是否齐全
-        if not REQUIRED_KEYS.issubset(config.keys()):
-            log.print_log("配置文件缺少必需字段")
-            raise ValueError("Missing required fields")
+        # 验证必需字段是否齐全；缺失时用默认值补齐（保留已有配置，
+        # 避免整体回退覆盖导致 WiFi 凭据等设置丢失），并保存升级 config.json
+        # 注意：MicroPython 的 set 不能与 dict.keys() 返回的 dict_view 相减（CPython 可以），须逐键判断
+        missing_keys = [key for key in REQUIRED_KEYS if key not in config]
+        if missing_keys:
+            log.print_log(f"配置文件缺少字段: {', '.join(sorted(missing_keys))}，用默认值补齐")
+            for key in missing_keys:
+                config[key] = DEFAULT_CONFIG[key]
+            save_config(config)
 
-        # 检查所有字段对应的值是否为整数
+        # 检查所有必需字段的类型是否与默认值一致（兼容 int/str/bool）
         for key in REQUIRED_KEYS:
-            if "wifi_" in key:
-                if not isinstance(config.get(key), str):
-                    log.print_log(f"{key} 必须为字符串")
-                    raise ValueError(f"Invalid field type for {key}")
-            elif not isinstance(config.get(key), int):
-                log.print_log(f"{key} 必须为整数")
+            default_value = DEFAULT_CONFIG[key]
+            if not isinstance(config.get(key), type(default_value)):
+                log.print_log(f"{key} 类型错误（应为 {type(default_value).__name__}）")
                 raise ValueError(f"Invalid field type for {key}")
 
         _config_cache = config
