@@ -16,14 +16,20 @@ sta_if.active(True)
 def connect_wifi_sync():
     try:
         if not sta_if.isconnected():
-            print_log("连接到 Wi-Fi")
-            try:
-                sta_if.connect(
-                    config.get_config_value("wifi_ssid"),
-                    config.get_config_value("wifi_password"),
-                )
-            except Exception:
-                pass
+            # 驱动仍在“连接中”时重复 connect 会触发 ESP-IDF 报错
+            # "sta is connecting, cannot set config"，此时直接进入等待
+            connecting = sta_if.status() == getattr(network, "STAT_CONNECTING", 1001)
+            if not connecting:
+                print_log("连接到 Wi-Fi")
+                try:
+                    sta_if.connect(
+                        config.get_config_value("wifi_ssid"),
+                        config.get_config_value("wifi_password"),
+                    )
+                except Exception:
+                    pass
+            else:
+                print_log("Wi-Fi 正在连接中，等待结果...")
             time.sleep(5)
             for i in range(24):  # 最多等待约 2 分钟（每 5 秒检查一次，共 24 次）
                 if not sta_if.isconnected():
