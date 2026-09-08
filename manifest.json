@@ -1,5 +1,5 @@
 {
-  "version": "20260907120329",
+  "version": "20260908052406",
   "files": [
     {
       "path": "boot.py",
@@ -19,7 +19,7 @@
     },
     {
       "path": "font.py",
-      "sha256": "491b85a8ff9cf59b2c7bb6e6e2f8f564de49f0dea0865ea9e9e93f523ad17c39"
+      "sha256": "37cd3df99a9cc585c131328f247dd589666591a5dc92f15ec6788c51bae6930e"
     },
     {
       "path": "log.py",
@@ -47,7 +47,7 @@
     },
     {
       "path": "screen_ui.py",
-      "sha256": "f56a246f1d29da5ed0766f6c9bf149d3fa09d57861f8730d24797815174a3541"
+      "sha256": "8440f826ce19e65f001020a9d29592e1ab957c0f8779697e5983efc75b3c2d82"
     },
     {
       "path": "ssd1306.py",
