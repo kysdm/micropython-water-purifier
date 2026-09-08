@@ -215,9 +215,10 @@ def _draw_char(byte_data, w, h, x_axis, y_axis, color=1):
     display.blit(fb, x_axis + _shift_x, y_axis + _shift_y)
 
 
-def draw_english_small(text, x_axis, y_axis, color=1):
+def draw_english_8x12(text, x_axis, y_axis, color=1):
     """
-    绘制 8×12 小字号英文字符（缓存 + blit；缺字回退大字号前 12 行）。
+    绘制 8×12 英文字符（主区小字，缓存 + blit；缺字按空格占位，
+    不回退 8×16 大字，避免风格混用）。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
     :param y_axis: 起始 y 坐标
@@ -228,13 +229,34 @@ def draw_english_small(text, x_axis, y_axis, color=1):
     offset_ = 0  # 用于字符之间的偏移量
     for char in text:
         code = ord(char)
-        ascii_code = f"{code}-s"  # 小字号字库键
+        ascii_code = f"{code}-8x12"  # 8×12 字库键
         byte_data = font.byte2.get(ascii_code)
         if byte_data is None:
-            # 小字号缺字时回退：取 16px 大字号字模的前 12 行
-            big = font.byte2.get(code)
-            byte_data = big[:12] if big else [0] * 12
+            offset_ += 8  # 缺字占位（不混用大字号字形，风格统一）
+            continue
         _draw_char(byte_data, 8, 12, x_axis + offset_, y_axis, color)
+        offset_ += 8  # 每个字符宽度为 8 像素
+
+
+def draw_english_8x16s(text, x_axis, y_axis, color=1):
+    """
+    绘制 8×16 宋体英文字符（缓存 + blit；TFT 底部栏 WIFI 行专用字库，
+    与主区 8×16 大字模不同源，数字/大小写同基线）。缺字按空格占位。
+    :param text: ASCII 字符串
+    :param x_axis: 起始 x 坐标
+    :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
+    """
+    if not _ensure_display():
+        return
+    offset_ = 0  # 用于字符之间的偏移量
+    for char in text:
+        code = ord(char)
+        byte_data = font.byte2.get(f"{code}-8x16s")
+        if byte_data is None:
+            offset_ += 8  # 缺字占位（空格等；该行字符集已齐）
+            continue
+        _draw_char(byte_data, 8, 16, x_axis + offset_, y_axis, color)
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
@@ -265,12 +287,13 @@ def _layout():
                 "clear_y": 65,     # 清空区域顶边
                 "clear_h": 94,     # 清空区域高度（到底边）
                 "time_y": 74,      # 日期时间行
-                "signal_y": 104,   # 信号强度行
+                "signal_y": 104,   # 信号图标行（图标底锚点 y+12）
+                "signal_text_y": 102,   # 信号文字行（比图标上移 2px，实机验证最佳）
                 "ip_y": 130,       # IP 行
                 "time_x": 6,       # 日期时间 x（独立可调）
                 "ip_x": 4,         # IP x（独立可调）
-                "signal_x": 8,     # 信号文字 x
-                "icon_x": 104,     # 信号图标 x（右对齐）
+                "signal_x": 7,     # 信号文字 x（实机验证最佳）
+                "icon_x": 102,     # 信号图标 x（实机验证最佳）
             },
         }
     return {
@@ -294,14 +317,15 @@ def _draw_static_layout():
         draw_english(label, 1, ly["filter_y"][i])
         draw_english(":", _FILTER_COLON_X, ly["filter_y"][i])
     # T33 数字用 12px 小字号，下移 2px 与 16px 标签底边对齐
-    draw_english_small("33", 9, ly["filter_y"][4] + 2)
+    draw_english_8x12("33", 9, ly["filter_y"][4] + 2)
 
     draw_chinese_small("纯水", 67, ly["right_y"][0])
     draw_chinese_small("废水", 67, ly["right_y"][1])
     draw_chinese_small("温度", 67, ly["right_y"][2])
     draw_chinese_small("状态", 67, ly["right_y"][3])
+    # 右侧标签冒号与左侧滤芯冒号一致：16px 大字号（与 12px 汉字标签垂直居中）
     for i in range(4):
-        draw_english_small(":", 90, ly["right_y"][i])
+        draw_english(":", 90, ly["right_y"][i])
     # 温度
     draw_chinese("°", 113, ly["temp_unit_y"])
     draw_english("C", 119, ly["temp_unit_y"])
@@ -336,7 +360,7 @@ async def display_cartridge_pp_usage_time(var):
         """显示PP滤芯使用时间"""
         var = int(var)
         _last_values["pp"] = var
-        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][0])
+        draw_english_8x12(f"{var:4}", 31, _layout()["filter_val_y"][0])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_cartridge_pp_usage_time_sync, var=var)
@@ -347,7 +371,7 @@ async def display_cartridge_udf_usage_time(var):
         """显示UDF滤芯使用时间"""
         var = int(var)
         _last_values["udf"] = var
-        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][1])
+        draw_english_8x12(f"{var:4}", 31, _layout()["filter_val_y"][1])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_cartridge_udf_usage_time_sync, var=var)
@@ -358,7 +382,7 @@ async def display_cartridge_cto_usage_time(var):
         """显示CTO滤芯使用时间"""
         var = int(var)
         _last_values["cto"] = var
-        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][2])
+        draw_english_8x12(f"{var:4}", 31, _layout()["filter_val_y"][2])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_cartridge_cto_usage_time_sync, var=var)
@@ -369,7 +393,7 @@ async def display_cartridge_ro_usage_time(var):
         """显示RO滤芯使用时间"""
         var = int(var)
         _last_values["ro"] = var
-        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][3])
+        draw_english_8x12(f"{var:4}", 31, _layout()["filter_val_y"][3])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_cartridge_ro_usage_time_sync, var=var)
@@ -380,7 +404,7 @@ async def display_cartridge_t33_usage_time(var):
         """显示T33滤芯使用时间"""
         var = int(var)
         _last_values["t33"] = var
-        draw_english_small(f"{var:4}", 31, _layout()["filter_val_y"][4])
+        draw_english_8x12(f"{var:4}", 31, _layout()["filter_val_y"][4])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_cartridge_t33_usage_time_sync, var=var)
@@ -392,7 +416,7 @@ async def display_pure_water_tds_value(var):
         var = int(var)
         var = min(var, 999)
         _last_values["pure_tds"] = var
-        draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][0])
+        draw_english_8x12(f"{var:3}", 100, _layout()["right_val_y"][0])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_pure_water_tds_value_sync, var=var)
@@ -404,7 +428,7 @@ async def display_of_wastewater_tds_value(var):
         var = int(var)
         var = min(var, 999)
         _last_values["waste_tds"] = var
-        draw_english_small(f"{var:3}", 100, _layout()["right_val_y"][1])
+        draw_english_8x12(f"{var:3}", 100, _layout()["right_val_y"][1])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_of_wastewater_tds_value_sync, var=var)
@@ -415,7 +439,7 @@ async def display_water_temperature(var):
         """显示水温"""
         var = int(var)
         _last_values["temp"] = var
-        draw_english_small(f"{var:2}", 99, _layout()["right_val_y"][2])
+        draw_english_8x12(f"{var:2}", 99, _layout()["right_val_y"][2])
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_water_temperature_sync, var=var)
@@ -432,14 +456,14 @@ async def display_countdown_time(var):
         _screen_wake = True
         if not _screen_powered:
             # 先在显存画上倒计时数字再点亮（全屏重绘较慢，避免点亮瞬间显示熄灭前的旧画面）
-            draw_english_small("   ", 99, _layout()["right_val_y"][3])
-            draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
+            draw_english_8x12("   ", 99, _layout()["right_val_y"][3])
+            draw_english_8x12(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
             display_show()
             power_on()
             log.print_log("屏幕已点亮（泡膜倒计时）")
             return
-        draw_english_small("   ", 99, _layout()["right_val_y"][3])
-        draw_english_small(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
+        draw_english_8x12("   ", 99, _layout()["right_val_y"][3])
+        draw_english_8x12(f"{var:3}", 99, _layout()["right_val_y"][3] + 1)
         display_show()
 
     await threadsafe_context.display_hardware.assign(display_countdown_time_sync, var=var)
@@ -479,24 +503,24 @@ def _draw_value(key, var):
         return
     var = int(var)
     if key == "pp":
-        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][0])
+        draw_english_8x12(f"{var:4}", 31, ly["filter_val_y"][0])
     elif key == "udf":
-        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][1])
+        draw_english_8x12(f"{var:4}", 31, ly["filter_val_y"][1])
     elif key == "cto":
-        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][2])
+        draw_english_8x12(f"{var:4}", 31, ly["filter_val_y"][2])
     elif key == "ro":
-        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][3])
+        draw_english_8x12(f"{var:4}", 31, ly["filter_val_y"][3])
     elif key == "t33":
-        draw_english_small(f"{var:4}", 31, ly["filter_val_y"][4])
+        draw_english_8x12(f"{var:4}", 31, ly["filter_val_y"][4])
     elif key == "pure_tds":
-        draw_english_small(f"{min(var, 999):3}", 100, ly["right_val_y"][0])
+        draw_english_8x12(f"{min(var, 999):3}", 100, ly["right_val_y"][0])
     elif key == "waste_tds":
-        draw_english_small(f"{min(var, 999):3}", 100, ly["right_val_y"][1])
+        draw_english_8x12(f"{min(var, 999):3}", 100, ly["right_val_y"][1])
     elif key == "temp":
-        draw_english_small(f"{var:2}", 99, ly["right_val_y"][2])
+        draw_english_8x12(f"{var:2}", 99, ly["right_val_y"][2])
     elif key == "countdown":
-        draw_english_small("   ", 99, ly["right_val_y"][3])
-        draw_english_small(f"{var:3}", 99, ly["right_val_y"][3] + 1)
+        draw_english_8x12("   ", 99, ly["right_val_y"][3])
+        draw_english_8x12(f"{var:3}", 99, ly["right_val_y"][3] + 1)
 
 
 _SIGNAL_ICON_W = 4 * 3 + 3 * 2  # 4 格信号图标总宽度（每格 3px + 2px 间隙）
@@ -523,6 +547,7 @@ def _draw_bottom_bar_sync():
         return
     import wifi
 
+    status_cn = None  # 断线中文文案（中英混排用，None=纯英文）
     if wifi.sta_if.isconnected():
         try:
             rssi = wifi.sta_if.status("rssi")  # 信号强度（dBm，负值）
@@ -544,7 +569,16 @@ def _draw_bottom_bar_sync():
             bar_color = 1
             level = 4
         ip = wifi.sta_if.ifconfig()[0]
+    elif wifi.sta_if.active():
+        # WiFi 接口固件中长期开启（从不关闭 STA）：断开只是未连上 AP/自动重连中，
+        # 显示“未连接”而非关闭；IP 置 --、信号图标不画
+        status = "WIFI:"
+        status_cn = "未连接"
+        ip = "--"
+        bar_color = 1
+        level = 0
     else:
+        # 接口真关闭（理论场景，固件当前不会发生）才显示 OFF
         status = "WIFI OFF"
         ip = "--"
         bar_color = 1
@@ -565,7 +599,12 @@ def _draw_bottom_bar_sync():
     # 第一行：日期 + 时间（8px）
     draw_english(date_time_str, bar["time_x"], bar["time_y"])
     # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
-    draw_english(status, bar["signal_x"], bar["signal_y"], color=bar_color)
+    if status_cn:
+        # 断线中英混排：“WIFI:”（8×16 宋体）+ 汉字（16×16），同 16px 高、同一宋体体系
+        draw_english_8x16s(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
+        draw_chinese(status_cn, bar["signal_x"] + len(status) * 8, bar["signal_text_y"], color=bar_color)
+    else:
+        draw_english_8x16s(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
     _draw_signal_icon(bar["icon_x"], bar["signal_y"], level, bar_color)
     # 第三行：IP 地址
     draw_english(ip, bar["ip_x"], bar["ip_y"])
