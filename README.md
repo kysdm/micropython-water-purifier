@@ -334,4 +334,5 @@ Copyright (C) 2025-2026 kysdm
 | [ssd1306.py](ssd1306.py) | MicroPython 官方驱动 | MIT | SSD1306 OLED 标准驱动 |
 | [st7735.py](st7735.py) | 开源 MIT 驱动整理 | MIT | ST7735S TFT 驱动（1.8 寸 128×160，RGB565，SPI） |
 | [ws2812b.py](ws2812b.py) | 参考 [MicroPython NeoPixel 教程](https://dmccreary.github.io/micropython/basics/05-neopixel/) 实现 | — | WS2812B RGB LED 驱动（约 20 行简单封装） |
+| [tools/font_to_py/](tools/font_to_py/) | [peterhinch/micropython-font-to-py](https://github.com/peterhinch/micropython-font-to-py) | MIT | 字模转换工具（构建期使用，不随固件分发；随仓库便于字库再生成） |
 | [font.py](font.py) | [AR PL UMing CN](https://zh.wikipedia.org/wiki/AR_PL_UMing)（文鼎科技开源，Debian fonts-arphic-uming 同源） | [Arphic Public License](ARPHICPL.TXT) | 全部点阵字模（汉字 16×16/12×12、ASCII 8×16/8×12、°）：经 [micropython-font-to-py](https://github.com/peterhinch/micropython-font-to-py)（MIT，仅构建期工具）提取 UMing CN 内嵌位图并转为本项目行格式，修改说明见 [font.py](font.py) 分区注释 |
