@@ -48,9 +48,8 @@ ORBIT_POSITIONS = [(0, 0), (1, 0), (2, 0), (2, 1), (1, 1), (0, 1)]  # 偏移循�
 ACTIVE_STATUSES = ("制水", "冲洗", "洗膜", "缺水")  # 需要保持屏幕点亮的运行状态（自动点亮并保持）
 # 左侧滤芯标签冒号的 X 坐标（独立可调）：滤芯数值从 x=31 起右对齐 4 格（到 x=63）。
 # 数值 ≥2000 时千位为 2~9 等宽笔画数字会贴近冒号（1000~1999 千位为 "1"，笔画少视觉不贴）；
-# 实机验证 _FILTER_COLON_X = 24 效果最佳。
-# 注意 UDF/CTO 三字母标签与 T33 的 "33" 小字（约到 x=25），不宜再小于 24。
-_FILTER_COLON_X = 24
+# 实机验证 _FILTER_COLON_X = 25 效果最佳（标签右移 1px 后同步；数值从 x=31 起不动）。
+_FILTER_COLON_X = 25
 
 # TFT 状态文字颜色（RGB565；OLED 单色屏自动忽略，统一白色）
 # 注：ST7735 为 TN 屏视角窄，纯色（单通道）侧面看不清，故用浅色（多通道）保证侧面可读
@@ -164,6 +163,33 @@ def draw_english(text, x_axis, y_axis, color=1):
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
+def draw_english_lbl(text, x_axis, y_axis, color=1):
+    """
+    绘制滤芯标签列专用 8×16 英文字符（缓存 + blit）。字模键为 "<码>-lbl"
+    （UMing ppem14，10px 字身：笔画 2..11），用于 PP/UDF/CTO/RO/T33 标签行；
+    笔画止于第 11 行，12px 行距下不会被下一行 blit 抹掉底部。找不到 -lbl 字模时
+    回退 int 大字模，避免漏传
+    font.py 时标签整列空白。
+    :param text: ASCII 字符串
+    :param x_axis: 起始 x 坐标
+    :param y_axis: 起始 y 坐标
+    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
+    """
+    if not _ensure_display():
+        return
+    offset_ = 0  # 用于字符之间的偏移量
+    for char in text:
+        code = ord(char)
+        byte_data = font.byte2.get(f"{code}-lbl")
+        if byte_data is None:
+            byte_data = font.byte2.get(code)  # 兜底：旧 font.py 无 -lbl 键
+            if byte_data is None:
+                offset_ += 8
+                continue
+        _draw_char(byte_data, 8, 16, x_axis + offset_, y_axis, color)
+        offset_ += 8  # 每个字符宽度为 8 像素
+
+
 # ---- 字符 framebuffer 缓存（blit 整块拷贝替代逐像素绘制，绘制阶段提速）----
 # key = (宽, 高, 字模数据, 颜色, 屏幕类型) → FrameBuffer；构建一次后反复使用
 _char_fb_cache = {}
@@ -238,28 +264,6 @@ def draw_english_8x12(text, x_axis, y_axis, color=1):
         offset_ += 8  # 每个字符宽度为 8 像素
 
 
-def draw_english_8x16s(text, x_axis, y_axis, color=1):
-    """
-    绘制 8×16 宋体英文字符（缓存 + blit；TFT 底部栏 WIFI 行专用字库，
-    与主区 8×16 大字模不同源，数字/大小写同基线）。缺字按空格占位。
-    :param text: ASCII 字符串
-    :param x_axis: 起始 x 坐标
-    :param y_axis: 起始 y 坐标
-    :param color: 颜色（TFT RGB565；OLED 单色屏忽略）
-    """
-    if not _ensure_display():
-        return
-    offset_ = 0  # 用于字符之间的偏移量
-    for char in text:
-        code = ord(char)
-        byte_data = font.byte2.get(f"{code}-8x16s")
-        if byte_data is None:
-            offset_ += 8  # 缺字占位（空格等；该行字符集已齐）
-            continue
-        _draw_char(byte_data, 8, 16, x_axis + offset_, y_axis, color)
-        offset_ += 8  # 每个字符宽度为 8 像素
-
-
 def draw_vertical_line(x, y_start, y_end, color=1):
     """
     绘制一条竖线（framebuf.vline C 加速）。
@@ -276,11 +280,10 @@ def _layout():
     """按屏幕类型返回布局坐标（y 轴）。"""
     if screen.get_type() == "tft":
         return {
-            "filter_y": [0, 12, 24, 36, 49],       # PP/UDF/CTO/RO/T33 标签
-            "filter_val_y": [2, 14, 26, 38, 51],   # 对应数值
+            "filter_y": [1, 13, 25, 37, 50],       # PP/UDF/CTO/RO/T33 标签
+            "filter_val_y": [2, 14, 26, 38, 51],   # 对应数值（12px 笔画 1..10 行，置于 y+1 与标签同底）
             "right_y": [2, 18, 34, 50],            # 纯水/废水/温度/状态 标签
-            "right_val_y": [4, 19, 35, 50],        # 对应数值
-            "temp_unit_y": 32,                     # °C 位置
+            "right_val_y": [3, 19, 35, 50],   # 对应数值（底边与 12px 汉字标签对齐）
             # TFT 底部信息栏（最终绘制坐标，OLED 无此栏）
             "bar": {
                 "line_y": 64,      # 与主区分隔的横线
@@ -291,17 +294,16 @@ def _layout():
                 "signal_text_y": 102,   # 信号文字行（比图标上移 2px，实机验证最佳）
                 "ip_y": 130,       # IP 行
                 "time_x": 6,       # 日期时间 x（独立可调）
-                "ip_x": 4,         # IP x（独立可调）
+                "ip_x": 5,         # IP x（右移 1px，实机验证）
                 "signal_x": 7,     # 信号文字 x（实机验证最佳）
                 "icon_x": 102,     # 信号图标 x（实机验证最佳）
             },
         }
     return {
-        "filter_y": [0, 12, 24, 36, 49],
-        "filter_val_y": [2, 14, 26, 38, 51],
+        "filter_y": [1, 13, 25, 37, 50],
+        "filter_val_y": [2, 14, 26, 38, 51],   # 对应数值（12px 笔画 1..10 行，置于 y+1 与标签同底）
         "right_y": [2, 18, 34, 50],
-        "right_val_y": [4, 19, 35, 50],
-        "temp_unit_y": 32,
+        "right_val_y": [3, 19, 35, 50],   # 数值底边与 12px 汉字标签对齐
         "bar": None,  # OLED 无底部信息栏
     }
 
@@ -313,22 +315,23 @@ def _draw_static_layout():
     screen_h = display.height
     # 固定不变的部分（带偏移量，供像素偏移防烧屏）
     # 标签不含冒号：冒号单独绘制（X 坐标独立为 _FILTER_COLON_X，可调）
+    # 标签列使用专用 10px 字身字库（-lbl），避免 12px 行距下 16px 大字拥挤
     for i, label in enumerate(("PP", "UDF", "CTO", "RO", "T")):
-        draw_english(label, 1, ly["filter_y"][i])
-        draw_english(":", _FILTER_COLON_X, ly["filter_y"][i])
-    # T33 数字用 12px 小字号，下移 2px 与 16px 标签底边对齐
-    draw_english_8x12("33", 9, ly["filter_y"][4] + 2)
+        draw_english_lbl(label, 2, ly["filter_y"][i])
+        draw_english_lbl(":", _FILTER_COLON_X, ly["filter_y"][i])
+    # T33 的 33 与 T 同字号同 y（-lbl 10px 字身），等高排印；随标签右移 1px
+    draw_english_lbl("33", 10, ly["filter_y"][4])
 
     draw_chinese_small("纯水", 67, ly["right_y"][0])
     draw_chinese_small("废水", 67, ly["right_y"][1])
     draw_chinese_small("温度", 67, ly["right_y"][2])
     draw_chinese_small("状态", 67, ly["right_y"][3])
-    # 右侧标签冒号与左侧滤芯冒号一致：16px 大字号（与 12px 汉字标签垂直居中）
+    # 右侧冒号：16px 大字号（点列已居中），上移 2px 与汉字/数值视觉对齐（可调 -1~-3）
     for i in range(4):
-        draw_english(":", 90, ly["right_y"][i])
-    # 温度
-    draw_chinese("°", 113, ly["temp_unit_y"])
-    draw_english("C", 119, ly["temp_unit_y"])
+        draw_english(":", 90, ly["right_y"][i] - 2)
+    # 温度单位 °C：与右侧数值同高（° 环 4×4 在顶部，C 用 12px）
+    draw_chinese("°", 113, ly["right_val_y"][2])
+    draw_english_8x12("C", 119, ly["right_val_y"][2])
 
     draw_vertical_line(65, 0, screen_h)
     # 边框（偏移后右侧/下侧边框会被裁剪 1~2 像素，属预期）
@@ -600,11 +603,11 @@ def _draw_bottom_bar_sync():
     draw_english(date_time_str, bar["time_x"], bar["time_y"])
     # 第二行：信号强度（彩色，左侧）+ 信号图标（右侧）
     if status_cn:
-        # 断线中英混排：“WIFI:”（8×16 宋体）+ 汉字（16×16），同 16px 高、同一宋体体系
-        draw_english_8x16s(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
+        # 断线中英混排：“WIFI:”（8×16）+ 汉字（16×16），同一 UMing 字库体系
+        draw_english(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
         draw_chinese(status_cn, bar["signal_x"] + len(status) * 8, bar["signal_text_y"], color=bar_color)
     else:
-        draw_english_8x16s(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
+        draw_english(status, bar["signal_x"], bar["signal_text_y"], color=bar_color)
     _draw_signal_icon(bar["icon_x"], bar["signal_y"], level, bar_color)
     # 第三行：IP 地址
     draw_english(ip, bar["ip_x"], bar["ip_y"])
