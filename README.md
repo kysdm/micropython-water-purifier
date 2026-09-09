@@ -49,7 +49,7 @@
 | 废水阀 | GPIO10（输出） | |
 | 进水电磁阀 | GPIO13（输出） | |
 | TDS 传感器 | UART1：TX=GPIO17，RX=GPIO18，9600bps | 双通道协议 |
-| OLED（0.96 寸） | SoftI2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [pins.py](pins.py) 的 `OLED_PINS` 配置（默认 SDA=1/SCL=2）；屏幕类型在 Web 系统配置页面（/system）选择（config.json 的 `display_type`，重启生效） |
+| OLED（0.96 寸） | I2C：SDA=GPIO1，SCL=GPIO2 | SSD1306 128×64；引脚在 [pins.py](pins.py) 的 `OLED_PINS` 配置（默认 SDA=1/SCL=2）；屏幕类型在 Web 系统配置页面（/system）选择（config.json 的 `display_type`，重启生效） |
 | TFT（可选，1.8 寸） | SPI：SCL(SCLK)/SDA(MOSI)/CS/DC/RST/BLK | ST7735 128×160 全彩；引脚在 [pins.py](pins.py) 的 `TFT_PINS` 配置（默认 7/8/14/15/16/21），坐标偏移 `TFT_X_OFFSET`/`TFT_Y_OFFSET`、颜色顺序 `TFT_BGR` 在 [screen.py](screen.py) 配置，两块屏硬件只接一块 |
 | RGB LED | GPIO48 | WS2812B 单灯 |
 
