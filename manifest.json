@@ -1,5 +1,5 @@
 {
-  "version": "20260908134725",
+  "version": "20260912142942",
   "files": [
     {
       "path": "boot.py",
@@ -47,7 +47,7 @@
     },
     {
       "path": "screen_ui.py",
-      "sha256": "5aadebc076075e4aff948dde07744ad633ed3bca604bb1c342e349cc8adf974c"
+      "sha256": "511e872db358bd9ad60124e004e9ec0a7844bcf98c740b1152a8b2bbf9d5e0d7"
     },
     {
       "path": "ssd1306.py",
