@@ -59,6 +59,12 @@ FILL_TDS_HYSTERESIS = 3  # 关阀超标余量（ppm）：TDS > 阈值+余量 才
 FILL_TDS_EXCEED_CONFIRM_MS = 3000  # 超标持续确认时长（毫秒）
 _fill_exceed_since = 0  # 超标开始时刻（ticks_ms）
 
+# 压力桶注水延时：制水启动后先直供水龙头，达到 FILL_START_DELAY_MS 后才允许打开压力桶进水阀。
+# 误触/短时开水龙头时制水很快停止，桶阀来不及打开，避免白注一桶水（桶水只用于纯水洗膜）；
+# 正常取水只是推迟注水开始时间，龙头出水和制水启动都不受影响，延时后注水判断（TDS+防抖）不变。
+FILL_START_DELAY_MS = 5000  # 注水开始延时（毫秒）：制水启动后多久才允许开桶进水阀
+_water_started_at = None  # 本次制水开始时刻（ticks_ms）；None = 未记录
+
 
 async def start_water_production():
     """制水程序主循环"""
@@ -85,7 +91,7 @@ async def start_water_production():
                 log.print_log("进水压力达标，可以开始制水。")
 
             elif high_pressure == 0 and not water_running:
-                # 水龙头打开：开始制水（桶阀初始关闭，制水循环中按 TDS 决定是否注水）
+                # 水龙头打开：立即开始制水（龙头出水不延迟；桶阀初始关闭，制水循环中按 TDS 决定是否注水）
                 forced_flush_ro_task_stop()  # 停止强制冲洗RO膜任务
                 filling_bucket = False
                 await start_water_actions()
@@ -102,14 +108,21 @@ async def start_water_production():
 
             elif water_running:
                 # 制水中：纯水 TDS 达标则向压力桶注水，不达标/不可信则停止注水（带防抖）
-                tds_ok = fill_tds_ok()
-                if tds_ok is not None and tds_ok != filling_bucket:
-                    pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
-                    filling_bucket = tds_ok
-                    if tds_ok:
-                        log.print_log("纯水TDS达标，开始向压力桶注水.")
-                    else:
-                        log.print_log("纯水TDS不达标或不可信，停止向压力桶注水.")
+                # 注水延时：制水启动后先直供水龙头，FILL_START_DELAY_MS 内桶进水阀保持关闭；
+                # 误触/短时开水龙头时制水很快停止，桶阀来不及打开，避免白注一桶水
+                if time.ticks_diff(time.ticks_ms(), _water_started_at) < FILL_START_DELAY_MS:
+                    if filling_bucket:  # 保险：延时内桶阀必须保持关闭
+                        pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(0)
+                        filling_bucket = False
+                else:
+                    tds_ok = fill_tds_ok()
+                    if tds_ok is not None and tds_ok != filling_bucket:
+                        pins.pressure_bucket_to_water_inlet_solenoid_valve_switch.value(1 if tds_ok else 0)
+                        filling_bucket = tds_ok
+                        if tds_ok:
+                            log.print_log("纯水TDS达标，开始向压力桶注水.")
+                        else:
+                            log.print_log("纯水TDS不达标或不可信，停止向压力桶注水.")
 
             await asyncio.sleep(0.5)
         except Exception as e:
@@ -121,6 +134,9 @@ async def start_water_production():
 
 async def start_water_actions():
     """启动制水的操作"""
+    global _water_started_at
+    _water_started_at = time.ticks_ms()  # 记录制水开始时刻，供压力桶注水延时使用
+
     countdown.stop_event.set()  # 停止倒计时任务
 
     pins.water_inlet_solenoid_valve_switch.value(1)  # 打开进水电磁阀
