@@ -249,9 +249,12 @@ def _draw_char(byte_data, w, h, x_axis, y_axis, color=1):
     display.blit(fb, x_axis + _shift_x, y_axis + _shift_y)
 
 
+_BLANK_8X12 = [0] * 12  # 空白 8×12 字模：缺字（如空格，8x12 分区无此键）占位用
+
+
 def draw_english_8x12(text, x_axis, y_axis, color=1):
     """
-    绘制 8×12 英文字符（主区小字，缓存 + blit；缺字按空格占位，
+    绘制 8×12 英文字符（主区小字，缓存 + blit；缺字按空白格子占位清屏，
     不回退 8×16 大字，避免风格混用）。
     :param text: 英文字符串
     :param x_axis: 起始 x 坐标
@@ -266,8 +269,9 @@ def draw_english_8x12(text, x_axis, y_axis, color=1):
         ascii_code = f"{code}-8x12"  # 8×12 字库键
         byte_data = font.byte2.get(ascii_code)
         if byte_data is None:
-            offset_ += 8  # 缺字占位（不混用大字号字形，风格统一）
-            continue
+            # 缺字必须真的 blit 一块全 0 字模；只推进 x 不画会把上一帧像素留在显存里，
+            # 导致数值位数变少时出现残影（如 TDS 120 → 2 显示成 "122"，OLED/TFT 同源）
+            byte_data = _BLANK_8X12
         _draw_char(byte_data, 8, 12, x_axis + offset_, y_axis, color)
         offset_ += 8  # 每个字符宽度为 8 像素
 
