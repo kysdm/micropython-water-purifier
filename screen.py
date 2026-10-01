@@ -132,6 +132,11 @@ class OLEDScreen:
 class TFTScreen:
     """ST7735 TFT（1.8 寸 128×160，SPI，RGB565）"""
 
+    # 类属性：跨重建保留物理背光状态。重建（force_reinit）不应把本已熄灭的屏点亮——
+    # Pin(..., value=1) 会让背光立即亮起，而面板复位后显存未定义＝纯白，于是"熄屏"
+    # 状态下反而挂着一块白屏。
+    _bl_on = True
+
     def __init__(self, pin_cfg):
         # 形参名不用 pins：避免遮蔽模块 pins（pins.py），字段统一经 pin_cfg[...] 访问
         import st7735
@@ -152,14 +157,30 @@ class TFTScreen:
         self.cs = Pin(pin_cfg["cs"], Pin.OUT, value=1)
         self.dc = Pin(pin_cfg["dc"], Pin.OUT, value=0)
         self.rst = Pin(pin_cfg["rst"], Pin.OUT, value=1)
-        self.bl = Pin(pin_cfg["bl"], Pin.OUT, value=1) if pin_cfg["bl"] is not None else None
+        self.bl = (Pin(pin_cfg["bl"], Pin.OUT, value=1 if TFTScreen._bl_on else 0)
+                   if pin_cfg["bl"] is not None else None)
         self.dev = st7735.ST7735(self.spi, cs=self.cs, dc=self.dc, rst=self.rst,
                                  width=self.width, height=self.height,
                                  x_offset=TFT_X_OFFSET, y_offset=TFT_Y_OFFSET,
                                  bgr=config.get_tft_bgr())
 
     def reinit(self):
-        self.__init__(self._pins)
+        """原地重跑面板复位+初始化时序（复用 SPI/Pin，不重建 machine.SPI）。
+        面板被电压瞬变打复位后，DISPON/RAMWR 全部不生效、SPI 也不报错，屏幕停在纯白；
+        重跑时序即可恢复。驱动内部已把显存清成黑屏，背光保持原状态（唤醒场景下此时
+        背光仍应熄灭，等整帧画完再点亮，避免露出白屏）。"""
+        self.dev.reinit()
+        if self.bl is not None:
+            self.bl.value(1 if TFTScreen._bl_on else 0)
+
+    def release(self):
+        """释放 SPI host（整体重建前调用，尽力而为）。
+        否则旧 SPI 对象未 deinit，同 host 再构造 SPI(1) 会报 already in use，
+        导致 TFT 的 force_reinit 永远失败。"""
+        try:
+            self.spi.deinit()
+        except Exception:
+            pass
 
     def pixel(self, x, y, c):
         self.dev.pixel(x, y, _tft_color(c))
@@ -189,11 +210,13 @@ class TFTScreen:
         pass  # TFT 无对比度控制
 
     def poweroff(self):
+        TFTScreen._bl_on = False
         if self.bl is not None:
             self.bl.value(0)
         self.dev.poweroff()
 
     def poweron(self):
+        TFTScreen._bl_on = True
         if self.bl is not None:
             self.bl.value(1)
         self.dev.poweron()
@@ -212,6 +235,15 @@ def get_screen(force_reinit=False):
     global _screen
     if _screen is None or force_reinit:
         if DISPLAY_TYPE == "tft":
+            if _screen is not None:
+                # 优先原地重跑复位+初始化：复用 SPI/Pin，代价最小，也不会与旧 SPI host
+                # 冲突（同 host 未 deinit 就重复构造 SPI(1) 会报 already in use）
+                try:
+                    _screen.reinit()
+                    return _screen
+                except Exception:
+                    pass  # 原地恢复失败 → 释放 host 后整体重建
+                _screen.release()
             _screen = TFTScreen(pins.TFT_PINS)
         else:
             # OLED 故障恢复：先 reset_bus（SCL 脉冲）释放可能卡死总线的从机——

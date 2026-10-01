@@ -79,6 +79,27 @@ _screen_grace_until = 0  # 空闲后允许继续点亮的截止时刻（ticks_ms
 _last_values = {}  # 最近一次各显示项的值，偏移/唤醒后用于重绘
 
 
+_repair_in_progress = False  # 修复重绘重入保护（重绘期间再次失败时不递归）
+
+
+def _repair_display():
+    """屏幕通信失败后的修复：重建屏幕 + 整帧重绘。
+    关键在"整帧重绘"：ST7735 在 RST/SWRESET 后显存内容未定义（1.8 寸模块上表现为
+    整屏纯白），而 SSD1306 驱动初始化末尾自带 fill(0)+show()；不补一次整帧重绘，
+    TFT 就会停在纯白画面（面板 sleep-in 时 SPI 写入不报错，不会自愈）。"""
+    global display, _repair_in_progress
+    if _repair_in_progress:
+        return
+    _repair_in_progress = True
+    try:
+        display = screen.get_screen(force_reinit=True)
+        redraw_all()
+    except Exception as e:
+        log.print_log(f"屏幕重建失败: {e}")
+    finally:
+        _repair_in_progress = False
+
+
 def display_show():
     global display
 
@@ -90,11 +111,8 @@ def display_show():
         # 正常使用
     except OSError as e:
         log.print_log(f"屏幕通信错误: {e}")
-        # 复位总线并重建显示对象（OLED：复位 I2C；TFT：重新初始化 SPI）
-        try:
-            display = screen.get_screen(force_reinit=True)
-        except Exception as e2:
-            log.print_log(f"屏幕重建失败: {e2}")
+        # 复位总线并重建显示对象（OLED：复位 I2C；TFT：重跑 SPI 面板复位+初始化）
+        _repair_display()
 
 
 def draw_chinese(ch_str, x_axis, y_axis, color=1):
@@ -652,11 +670,26 @@ def power_off():
 
 def power_on():
     # 打开屏幕并重绘当前画面
+    # TFT：每次点亮都重跑一遍面板复位+初始化时序。ST7735 被水泵/电磁阀上电瞬变拉低
+    # 电压而复位后会进入 sleep-in：此后 DISPON/RAMWR 全部不生效、SPI 也不报错，屏幕
+    # 停在纯白且永不自愈（唤醒时机恰好与制水启动的电流冲击重合，故"制水唤醒＝白屏"
+    # 最常见）。重跑期间背光保持熄灭、画面不可见，等整帧画完再开背光。
     global _screen_powered
     if not _ensure_display():
         return
-    display.poweron()
-    redraw_all()
+    try:
+        if screen.get_type() == "tft":
+            display.reinit()  # 复位+初始化+清黑（背光仍灭）
+            redraw_all()  # 先画好整帧再开背光，避免露出白屏/旧帧
+            display.poweron()
+        else:
+            display.poweron()
+            redraw_all()  # OLED 无面板复位问题，沿用原逻辑
+    except Exception as e:
+        # 失败时不置 _screen_powered：下次 auto_off_task 检查（≤30 秒）会重试，
+        # 瞬态故障可自愈（置位反而会卡成黑屏直到下一个熄屏/唤醒周期）
+        log.print_log(f"屏幕点亮失败: {e}")
+        raise
     _screen_powered = True
 
 

@@ -51,6 +51,7 @@ class ST7735(framebuf.FrameBuffer):
         super().__init__(self._buffer, width, height, framebuf.RGB565)
         self.reset()
         self._init_display()
+        self.clear()  # 复位后显存内容未定义（模块上表现为整屏纯白）→ 立即清黑
 
     def _write_cmd(self, cmd):
         self._dc.value(0)
@@ -71,6 +72,23 @@ class ST7735(framebuf.FrameBuffer):
         time.sleep_ms(150)
         self._write_cmd(_SWRESET)
         time.sleep_ms(150)
+
+    def clear(self):
+        """显存清成黑色并推送。RST/SWRESET（含上电、以及水泵/电磁阀上电瞬变触发的
+        面板复位）后显存内容未定义——1.8 寸模块上表现为整屏纯白；必须主动写入一帧，
+        面板才会回到确定画面。"""
+        self.fill(0)
+        self.show()
+
+    def reinit(self):
+        """原地重跑复位 + 初始化时序（复用已建的 SPI 与 Pin 对象）。
+        面板被电压瞬变打复位后会进入 sleep-in：此后 DISPON/RAMWR 全部不生效、SPI 也
+        不会报错，屏幕停在纯白且永不自愈——只有重跑本时序能恢复。
+        故意不重建 machine.SPI：同一 host 未 deinit 就重复构造会触发 "already in use"
+        类异常（详见 screen.TFTScreen.release）。"""
+        self.reset()
+        self._init_display()
+        self.clear()
 
     def _init_display(self):
         # ST7735S 标准初始化时序
