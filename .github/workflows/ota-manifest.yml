@@ -14,6 +14,10 @@ permissions:
 jobs:
   update-manifest:
     runs-on: ubuntu-latest
+    env:
+      # runner 默认是 UTC：不设时区时 bot 的提交时间戳为 +0000（本地提交是 +0800）。
+      # 版本号本身已在 tools/make_ota.py 内固定为东八区，与此处无关
+      TZ: Asia/Shanghai
     steps:
       - name: 检出代码
         uses: actions/checkout@v6

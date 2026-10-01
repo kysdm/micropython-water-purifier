@@ -6,7 +6,7 @@
 #   配合 raw.githubusercontent.com 或本地 http.server 使用，不复制文件；
 # 带输出目录：复制模式——生成 <输出目录>/ 更新包（文件副本 + manifest.json），
 #   适合把更新包放到独立目录/服务器。
-# 版本号默认为生成时刻时间戳（如 202609011832，与本地版本不同即触发升级；
+# 版本号默认为生成时刻时间戳（东八区，如 202609011832，与本地版本不同即触发升级；
 # 每次生成都不同，无需手动打版本号）
 #
 # 生成内容：
@@ -19,6 +19,18 @@ import os
 import shutil
 import sys
 import time
+
+
+# 版本号时区固定为东八区（与设备 time_utils.TIMEZONE_OFFSET 一致）。
+# 不能用 time.localtime：GitHub Actions runner 的本地时区是 UTC，会让 bot 生成的
+# 版本号比本地生成/人眼预期早 8 小时（曾出现本地 22:10 生成、版本号写成 14:10），
+# 凌晨生成还会把日期写成前一天。用 gmtime+固定偏移则与运行环境时区无关。
+VERSION_TZ_OFFSET = 8 * 3600
+
+
+def make_version():
+    """生成版本号（YYYYMMDDHHMMSS，东八区）"""
+    return time.strftime("%Y%m%d%H%M%S", time.gmtime(time.time() + VERSION_TZ_OFFSET))
 
 
 def sha256_file(path):
@@ -65,7 +77,7 @@ def build_manifest(project, files, version, dest_dir, copy_files):
 def main():
     project = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     files = collect_files(project)
-    version = time.strftime("%Y%m%d%H%M%S")
+    version = make_version()
 
     if len(sys.argv) > 1:
         # 复制模式：生成 <输出目录>/ 更新包
